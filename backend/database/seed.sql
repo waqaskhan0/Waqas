@@ -1,0 +1,2 @@
+-- Use `npm run seed:users` from the backend folder after installing dependencies.
+-- That script hashes the password correctly and inserts one demo user for each role.
