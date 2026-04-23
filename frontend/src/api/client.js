@@ -45,6 +45,13 @@ export const apiClient = {
       }
     });
   },
+  listManagers(token) {
+    return request("/users/managers", {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
   createRequisition(token, payload) {
     return request("/requisitions", {
       method: "POST",
@@ -88,6 +95,21 @@ export const apiClient = {
     return request(`/requisitions/${requisitionId}/reject`, {
       method: "POST",
       body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
+  listMyNotifications(token) {
+    return request("/notifications/my", {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
+  markNotificationRead(token, notificationId) {
+    return request(`/notifications/${notificationId}/read`, {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${token}`
       }
@@ -148,6 +170,22 @@ export const apiClient = {
   },
   receivePurchaseOrder(token, purchaseOrderId, payload) {
     return request(`/receiving/purchase-orders/${purchaseOrderId}/receive`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
+  listFinanceQueue(token) {
+    return request("/finance/queue", {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
+  createFinanceMatch(token, purchaseOrderId, payload) {
+    return request(`/finance/purchase-orders/${purchaseOrderId}/match`, {
       method: "POST",
       body: JSON.stringify(payload),
       headers: {

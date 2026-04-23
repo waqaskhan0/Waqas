@@ -51,9 +51,16 @@ Completed foundation:
 - Push accepted stock back into inventory balances
 - Persist GRN headers and lines for downstream finance evidence
 
-## Modules 7-8
+## Module 7: Finance 3-way match
 
-Keep these services separate but connected through requisition and stock status changes:
+Completed foundation:
 
-- Finance 3-way match
-- Centralized notification service
+- Queue fully received purchase orders into finance review
+- Capture invoice data against PO and GRN evidence
+- Record line-by-line 3-way match results with mismatch visibility
+
+## Module 8: Centralized notification service
+
+Completed foundation:
+
+- Centralize downstream notifications across approval, procurement, receiving, and finance

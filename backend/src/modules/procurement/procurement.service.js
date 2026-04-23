@@ -363,12 +363,16 @@ export async function createPurchaseOrder(procurementUser, requisitionId, payloa
 
     const requisitionDetail = await getRequisitionByIdForUser(requisitionId, procurementUser);
     const notification = await sendPurchaseOrderCreatedNotification({
+      requisitionId,
       requisitionNumber: requisition.requisition_number,
+      poId: purchaseOrderId,
       poNumber,
+      recipientUserId: requisition.requested_by_user_id,
       recipientEmail: requisition.requester_email,
       recipientName: requisition.requester_name,
       vendorName: vendor.vendor_name,
-      procurementOfficerName: procurementUser.fullName
+      procurementOfficerName: procurementUser.fullName,
+      procurementOfficerUserId: procurementUser.id
     });
 
     return {

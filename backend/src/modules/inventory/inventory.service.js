@@ -423,11 +423,14 @@ export async function processInventoryDecision(inventoryUser, requisitionId, pay
 
     const requisitionDetail = await getRequisitionByIdForUser(requisitionId, inventoryUser);
     const notification = await sendInventoryProcessingNotification({
+      requisitionId,
       requisitionNumber: requisition.requisition_number,
       status: summary.requisitionStatus,
+      recipientUserId: requisition.requested_by_user_id,
       recipientEmail: requisition.requester_email,
       recipientName: requisition.requester_name,
       inventoryOfficerName: inventoryUser.fullName,
+      inventoryOfficerUserId: inventoryUser.id,
       remarks: payload.remarks
     });
 

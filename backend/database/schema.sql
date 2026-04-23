@@ -223,6 +223,41 @@ CREATE TABLE goods_receipt_lines (
   CONSTRAINT fk_goods_receipt_lines_stock_item FOREIGN KEY (stock_item_id) REFERENCES inventory_stock(id)
 );
 
+CREATE TABLE finance_matches (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  purchase_order_id BIGINT UNSIGNED NOT NULL,
+  finance_user_id BIGINT UNSIGNED NOT NULL,
+  invoice_number VARCHAR(60) NOT NULL,
+  invoice_date DATE NOT NULL,
+  invoice_amount DECIMAL(14, 2) NOT NULL,
+  po_amount DECIMAL(14, 2) NOT NULL,
+  received_amount DECIMAL(14, 2) NOT NULL,
+  variance_amount DECIMAL(14, 2) NOT NULL DEFAULT 0,
+  status ENUM('MATCHED', 'MISMATCH') NOT NULL,
+  remarks VARCHAR(500) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_finance_matches_po FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id),
+  CONSTRAINT fk_finance_matches_user FOREIGN KEY (finance_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE finance_match_lines (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  finance_match_id BIGINT UNSIGNED NOT NULL,
+  purchase_order_line_id BIGINT UNSIGNED NOT NULL,
+  line_number INT UNSIGNED NOT NULL,
+  quantity_billed DECIMAL(10, 2) NOT NULL,
+  unit_price DECIMAL(12, 2) NOT NULL,
+  line_total DECIMAL(14, 2) NOT NULL,
+  expected_quantity DECIMAL(10, 2) NOT NULL,
+  expected_unit_price DECIMAL(12, 2) NOT NULL,
+  expected_line_total DECIMAL(14, 2) NOT NULL,
+  status ENUM('MATCHED', 'MISMATCH') NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_finance_match_lines_match FOREIGN KEY (finance_match_id) REFERENCES finance_matches(id),
+  CONSTRAINT fk_finance_match_lines_po_line FOREIGN KEY (purchase_order_line_id) REFERENCES purchase_order_lines(id),
+  CONSTRAINT uq_finance_match_lines UNIQUE (finance_match_id, purchase_order_line_id)
+);
+
 CREATE INDEX idx_requisitions_requester ON requisitions(requested_by_user_id);
 CREATE INDEX idx_requisitions_manager ON requisitions(manager_id);
 CREATE INDEX idx_requisitions_status ON requisitions(status);
@@ -240,6 +275,42 @@ CREATE INDEX idx_goods_receipts_po ON goods_receipts(purchase_order_id);
 CREATE INDEX idx_goods_receipts_received_at ON goods_receipts(received_at);
 CREATE INDEX idx_goods_receipt_lines_receipt ON goods_receipt_lines(goods_receipt_id);
 CREATE INDEX idx_goods_receipt_lines_po_line ON goods_receipt_lines(purchase_order_line_id);
+CREATE INDEX idx_finance_matches_po ON finance_matches(purchase_order_id);
+CREATE INDEX idx_finance_matches_status ON finance_matches(status);
+CREATE INDEX idx_finance_match_lines_match ON finance_match_lines(finance_match_id);
+
+CREATE TABLE notifications (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  event_type VARCHAR(60) NOT NULL,
+  entity_type VARCHAR(40) NOT NULL,
+  entity_id BIGINT UNSIGNED NULL,
+  template VARCHAR(80) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  payload_json JSON NOT NULL,
+  triggered_by_user_id BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_notifications_actor FOREIGN KEY (triggered_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE notification_recipients (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  notification_id BIGINT UNSIGNED NOT NULL,
+  recipient_user_id BIGINT UNSIGNED NOT NULL,
+  recipient_email VARCHAR(150) NULL,
+  recipient_name VARCHAR(120) NULL,
+  channel ENUM('EMAIL', 'IN_APP') NOT NULL DEFAULT 'EMAIL',
+  delivery_status VARCHAR(40) NOT NULL DEFAULT 'queued-simulated',
+  status ENUM('UNREAD', 'READ') NOT NULL DEFAULT 'UNREAD',
+  read_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_notification_recipients_notification FOREIGN KEY (notification_id) REFERENCES notifications(id),
+  CONSTRAINT fk_notification_recipients_user FOREIGN KEY (recipient_user_id) REFERENCES users(id)
+);
+
+CREATE INDEX idx_notifications_event_type ON notifications(event_type);
+CREATE INDEX idx_notifications_created_at ON notifications(created_at);
+CREATE INDEX idx_notification_recipients_user ON notification_recipients(recipient_user_id);
+CREATE INDEX idx_notification_recipients_status ON notification_recipients(status);
 
 INSERT INTO inventory_stock (
   sku,

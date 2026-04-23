@@ -1,6 +1,8 @@
 import { EmployeeRequisitionWorkspace } from "../components/EmployeeRequisitionWorkspace.jsx";
+import { FinanceWorkspace } from "../components/FinanceWorkspace.jsx";
 import { InventoryWorkspace } from "../components/InventoryWorkspace.jsx";
 import { ManagerApprovalWorkspace } from "../components/ManagerApprovalWorkspace.jsx";
+import { NotificationInbox } from "../components/NotificationInbox.jsx";
 import { ProcurementWorkspace } from "../components/ProcurementWorkspace.jsx";
 import { ReceivingWorkspace } from "../components/ReceivingWorkspace.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -25,14 +27,11 @@ const roleViews = {
   },
   FINANCE: {
     title: "Finance review",
-    focus: "Upstream requisition capture is active; finance matching follows later."
+    focus: "Match invoices against purchase orders and goods receipts before financial clearance."
   }
 };
 
-const nextModules = [
-  "Module 7: Finance 3-way match",
-  "Module 8: Centralized notification service"
-];
+const nextModules = ["Module 8: Centralized notification service"];
 
 export function DashboardPage() {
   const { token, user, signOut } = useAuth();
@@ -41,6 +40,7 @@ export function DashboardPage() {
   const isManager = user.role === "LINE_MANAGER";
   const isInventoryOfficer = user.role === "INVENTORY_OFFICER";
   const isProcurementOfficer = user.role === "PROCUREMENT_OFFICER";
+  const isFinance = user.role === "FINANCE";
 
   return (
     <main className="dashboard-shell">
@@ -63,6 +63,8 @@ export function DashboardPage() {
         </div>
       </header>
 
+      <NotificationInbox token={token} />
+
       {isEmployee ? (
         <EmployeeRequisitionWorkspace token={token} />
       ) : isManager ? (
@@ -74,10 +76,12 @@ export function DashboardPage() {
         </div>
       ) : isProcurementOfficer ? (
         <ProcurementWorkspace token={token} />
+      ) : isFinance ? (
+        <FinanceWorkspace token={token} />
       ) : (
         <section className="grid two-column">
           <article className="card">
-            <p className="section-label">Modules 1-6 live</p>
+            <p className="section-label">Modules 1-7 live</p>
             <h2>Current workflow state</h2>
             <ul className="checklist">
               <li>JWT-based login session and role-aware access</li>
@@ -90,6 +94,7 @@ export function DashboardPage() {
               <li>Procurement lines tied back to requisition balances</li>
               <li>GRN capture with purchase-order receipt tracking</li>
               <li>Receipt updates pushed back into inventory stock</li>
+              <li>Finance invoice capture with PO and GRN comparison</li>
             </ul>
           </article>
 

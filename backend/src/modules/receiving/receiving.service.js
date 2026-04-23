@@ -106,6 +106,7 @@ async function getPurchaseOrderForReceiving(connection, purchaseOrderId) {
         po.requisition_id,
         po.status,
         r.requisition_number,
+        r.requested_by_user_id,
         requester.full_name AS requester_name,
         requester.email AS requester_email
       FROM purchase_orders po
@@ -438,12 +439,16 @@ export async function receivePurchaseOrder(receivingUser, purchaseOrderId, paylo
       receivingUser
     );
     const notification = await sendGoodsReceivedNotification({
+      requisitionId: purchaseOrder.requisition_id,
       requisitionNumber: purchaseOrder.requisition_number,
+      poId: purchaseOrderId,
       poNumber: purchaseOrder.po_number,
       grnNumber,
+      recipientUserId: purchaseOrder.requested_by_user_id,
       recipientEmail: purchaseOrder.requester_email,
       recipientName: purchaseOrder.requester_name,
       receiverName: receivingUser.fullName,
+      receiverUserId: receivingUser.id,
       purchaseOrderStatus
     });
 

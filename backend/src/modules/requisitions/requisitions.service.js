@@ -88,6 +88,7 @@ function mapRequisitionDetail(row, items, approvalLogs) {
     inventoryProcessedAt: row.inventory_processed_at,
     purchaseOrders: row.purchase_orders ?? [],
     goodsReceipts: row.goods_receipts ?? [],
+    financeMatches: row.finance_matches ?? [],
     items,
     approvalLogs,
     inventoryAllocations: row.inventory_allocations ?? []
@@ -416,6 +417,93 @@ async function getGoodsReceipts(requisitionId) {
   return [...goodsReceipts.values()];
 }
 
+async function getFinanceMatches(requisitionId) {
+  const rows = await query(
+    `
+      SELECT
+        fm.id,
+        fm.purchase_order_id,
+        fm.finance_user_id,
+        fm.invoice_number,
+        fm.invoice_date,
+        fm.invoice_amount,
+        fm.po_amount,
+        fm.received_amount,
+        fm.variance_amount,
+        fm.status,
+        fm.remarks,
+        fm.created_at,
+        finance_user.full_name AS finance_user_name,
+        fml.id AS line_id,
+        fml.purchase_order_line_id,
+        fml.line_number,
+        fml.quantity_billed,
+        fml.unit_price,
+        fml.line_total,
+        fml.expected_quantity,
+        fml.expected_unit_price,
+        fml.expected_line_total,
+        fml.status AS line_status,
+        pol.requisition_item_id,
+        pol.item_description,
+        pol.unit
+      FROM finance_matches fm
+      INNER JOIN purchase_orders po ON po.id = fm.purchase_order_id
+      INNER JOIN users finance_user ON finance_user.id = fm.finance_user_id
+      LEFT JOIN finance_match_lines fml ON fml.finance_match_id = fm.id
+      LEFT JOIN purchase_order_lines pol ON pol.id = fml.purchase_order_line_id
+      WHERE po.requisition_id = ?
+      ORDER BY fm.created_at DESC, fm.id DESC, fml.line_number ASC
+    `,
+    [requisitionId]
+  );
+
+  const financeMatches = new Map();
+
+  for (const row of rows) {
+    if (!financeMatches.has(row.id)) {
+      financeMatches.set(row.id, {
+        id: row.id,
+        purchaseOrderId: row.purchase_order_id,
+        invoiceNumber: row.invoice_number,
+        invoiceDate: row.invoice_date,
+        invoiceAmount: Number(row.invoice_amount),
+        poAmount: Number(row.po_amount),
+        receivedAmount: Number(row.received_amount),
+        varianceAmount: Number(row.variance_amount),
+        status: row.status,
+        remarks: row.remarks,
+        createdAt: row.created_at,
+        financeUser: {
+          id: row.finance_user_id,
+          fullName: row.finance_user_name
+        },
+        lines: []
+      });
+    }
+
+    if (row.line_id) {
+      financeMatches.get(row.id).lines.push({
+        id: row.line_id,
+        purchaseOrderLineId: row.purchase_order_line_id,
+        requisitionItemId: row.requisition_item_id,
+        lineNumber: row.line_number,
+        itemDescription: row.item_description,
+        unit: row.unit,
+        quantityBilled: Number(row.quantity_billed),
+        unitPrice: Number(row.unit_price),
+        lineTotal: Number(row.line_total),
+        expectedQuantity: Number(row.expected_quantity),
+        expectedUnitPrice: Number(row.expected_unit_price),
+        expectedLineTotal: Number(row.expected_line_total),
+        status: row.line_status
+      });
+    }
+  }
+
+  return [...financeMatches.values()];
+}
+
 function canAccessRequisition(user, requisitionRow) {
   if (user.id === requisitionRow.requested_by_user_id) {
     return true;
@@ -697,11 +785,14 @@ async function recordDecision({
 
     const updatedRequisition = await getRequisitionByIdForUser(requisitionId, managerUser);
     const notification = await sendRequisitionDecisionNotification({
+      requisitionId,
       requisitionNumber: requisition.requisition_number,
       decision,
+      recipientUserId: requisition.requested_by_user_id,
       recipientEmail: requisition.requester_email,
       recipientName: requisition.requester_name,
       managerName: managerUser.fullName,
+      managerUserId: managerUser.id,
       remarks
     });
 
@@ -746,12 +837,20 @@ export async function getRequisitionByIdForUser(requisitionId, user) {
     throw new ApiError(403, "You do not have access to this requisition.");
   }
 
-  const [items, approvalLogs, inventoryAllocations, purchaseOrders, goodsReceipts] = await Promise.all([
+  const [
+    items,
+    approvalLogs,
+    inventoryAllocations,
+    purchaseOrders,
+    goodsReceipts,
+    financeMatches
+  ] = await Promise.all([
     getRequisitionItems(requisitionId),
     getApprovalLogs(requisitionId),
     getInventoryAllocations(requisitionId),
     getPurchaseOrders(requisitionId),
-    getGoodsReceipts(requisitionId)
+    getGoodsReceipts(requisitionId),
+    getFinanceMatches(requisitionId)
   ]);
 
   return mapRequisitionDetail(
@@ -759,7 +858,8 @@ export async function getRequisitionByIdForUser(requisitionId, user) {
       ...requisitionRow,
       inventory_allocations: inventoryAllocations,
       purchase_orders: purchaseOrders,
-      goods_receipts: goodsReceipts
+      goods_receipts: goodsReceipts,
+      finance_matches: financeMatches
     },
     items,
     approvalLogs
