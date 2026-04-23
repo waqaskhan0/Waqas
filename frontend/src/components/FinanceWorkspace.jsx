@@ -53,6 +53,12 @@ function getLatestFinanceMatch(requisition, purchaseOrderId) {
   );
 }
 
+function getGoodsReceiptsForPurchaseOrder(requisition, purchaseOrderId) {
+  return (requisition?.goodsReceipts ?? []).filter(
+    (receipt) => receipt.purchaseOrderId === purchaseOrderId
+  );
+}
+
 function buildQueueSummary(requisition, purchaseOrder) {
   const latestFinanceMatch = getLatestFinanceMatch(requisition, purchaseOrder.id);
 
@@ -124,6 +130,7 @@ export function FinanceWorkspace({ token }) {
   const [submitError, setSubmitError] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState("");
   const [submittedMatch, setSubmittedMatch] = useState(null);
+  const [notificationPreview, setNotificationPreview] = useState(null);
   const [isLoadingQueue, setIsLoadingQueue] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -205,6 +212,7 @@ export function FinanceWorkspace({ token }) {
           );
           setRemarks(latestFinanceMatch?.remarks ?? "");
           setSubmittedMatch(latestFinanceMatch);
+          setNotificationPreview(null);
         }
       } catch (error) {
         if (!ignore) {
@@ -241,6 +249,7 @@ export function FinanceWorkspace({ token }) {
 
     setSubmitError("");
     setSubmitSuccess("");
+    setNotificationPreview(null);
     setIsSubmitting(true);
 
     try {
@@ -271,6 +280,7 @@ export function FinanceWorkspace({ token }) {
       setSelectedPurchaseOrder(purchaseOrder);
       setLineStates(buildLineState(response.requisition, purchaseOrder));
       setSubmittedMatch(response.financeMatch);
+      setNotificationPreview(response.notification);
       setSubmitSuccess(
         `Invoice ${response.financeMatch?.invoiceNumber ?? invoiceNumber} recorded as ${String(
           response.financeMatch?.status ?? "MISMATCH"
@@ -291,7 +301,7 @@ export function FinanceWorkspace({ token }) {
     }
   }
 
-  const latestFinanceMatch = getLatestFinanceMatch(
+  const relatedGoodsReceipts = getGoodsReceiptsForPurchaseOrder(
     selectedRequisition,
     selectedPurchaseOrder?.id
   );
@@ -345,6 +355,7 @@ export function FinanceWorkspace({ token }) {
                 setSelectedPurchaseOrderId(purchaseOrder.id);
                 setSubmitError("");
                 setSubmitSuccess("");
+                setNotificationPreview(null);
               }}
             >
               <div className="requisition-list-top">
@@ -389,7 +400,7 @@ export function FinanceWorkspace({ token }) {
 
         {!isLoadingDetail && !detailError && selectedPurchaseOrder && selectedRequisition ? (
           <form className="inventory-form" onSubmit={handleSubmit}>
-            <div className="summary-strip">
+              <div className="summary-strip">
               <div className="summary-tile">
                 <span>PO amount</span>
                 <strong>{formatCurrency(selectedPurchaseOrder.subtotalAmount)}</strong>
@@ -406,6 +417,44 @@ export function FinanceWorkspace({ token }) {
                     )
                   )}
                 </strong>
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <p className="section-label">PO and GRN evidence</p>
+              <div className="detail-item-list">
+                <div className="detail-item-card">
+                  <div className="detail-item-top">
+                    <strong>Purchase order notes</strong>
+                    <span>{selectedPurchaseOrder.poNumber}</span>
+                  </div>
+                  <p>{selectedPurchaseOrder.vendor.vendorName}</p>
+                  <small>{selectedPurchaseOrder.notes || "No purchase order notes recorded."}</small>
+                </div>
+
+                {relatedGoodsReceipts.length ? (
+                  relatedGoodsReceipts.map((receipt) => (
+                    <div key={receipt.id} className="detail-item-card">
+                      <div className="detail-item-top">
+                        <strong>{receipt.grnNumber}</strong>
+                        <span>{formatDateTime(receipt.receivedAt)}</span>
+                      </div>
+                      <p>
+                        {receipt.deliveryNoteNumber || "No delivery note"} |{" "}
+                        {receipt.receiver.fullName}
+                      </p>
+                      <small>{receipt.remarks || "No GRN remarks recorded."}</small>
+                    </div>
+                  ))
+                ) : (
+                  <div className="detail-item-card">
+                    <div className="detail-item-top">
+                      <strong>No GRN records</strong>
+                      <span>Pending</span>
+                    </div>
+                    <small>Goods receipt remarks will appear here once receiving is recorded.</small>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -525,6 +574,17 @@ export function FinanceWorkspace({ token }) {
             {submitError ? <p className="form-error">{submitError}</p> : null}
             {submitSuccess ? <p className="form-success">{submitSuccess}</p> : null}
 
+            {notificationPreview ? (
+              <div className="notification-preview">
+                <strong>Notification hook</strong>
+                <p>
+                  {notificationPreview.status} email prepared for{" "}
+                  {notificationPreview.recipientEmail}.
+                </p>
+                <small>{notificationPreview.subject}</small>
+              </div>
+            ) : null}
+
             <div className="decision-actions">
               <button type="submit" className="primary-action-button" disabled={isSubmitting}>
                 {isSubmitting ? "Recording..." : "Record finance match"}
@@ -562,6 +622,7 @@ export function FinanceWorkspace({ token }) {
                   Received {formatCurrency(match.receivedAmount)} | Variance{" "}
                   {formatCurrency(match.varianceAmount)}
                 </small>
+                <small>{match.remarks || "No finance remarks recorded."}</small>
               </div>
             ))}
           </div>

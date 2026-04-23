@@ -22,6 +22,55 @@ function getStatusClassName(status) {
   return String(status ?? "UNREAD").toLowerCase().replaceAll("_", "-");
 }
 
+function formatWorkflowLabel(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replaceAll("_", " ");
+}
+
+function getNotificationSummary(notification) {
+  const payload = notification.payload ?? {};
+
+  switch (notification.eventType) {
+    case "REQUISITION_SUBMITTED":
+      return `${payload.requesterName ?? "A requester"} submitted ${payload.requisitionNumber ?? "a requisition"}${payload.title ? `: ${payload.title}` : ""}.`;
+    case "REQUISITION_APPROVED":
+    case "REQUISITION_REJECTED":
+      return `${payload.managerName ?? "Manager"} ${String(payload.decision ?? "").toLowerCase()} ${payload.requisitionNumber ?? "this requisition"}.`;
+    case "INVENTORY_ACTION_REQUIRED":
+      return `${payload.requisitionNumber ?? "This requisition"} is ready for inventory review.`;
+    case "INVENTORY_PROCESSED":
+      return `${payload.inventoryOfficerName ?? "Inventory"} marked ${payload.requisitionNumber ?? "this requisition"} as ${formatWorkflowLabel(payload.status)}.`;
+    case "PROCUREMENT_ACTION_REQUIRED":
+      return `${payload.requisitionNumber ?? "This requisition"} needs procurement action.`;
+    case "PURCHASE_ORDER_CREATED":
+      return `PO ${payload.poNumber ?? ""} was created${payload.vendorName ? ` with ${payload.vendorName}` : ""}.`;
+    case "GOODS_RECEIPT_REQUIRED":
+      return `PO ${payload.poNumber ?? ""} is ready for goods receipt.`;
+    case "GOODS_RECEIVED":
+      return `${payload.grnNumber ?? "A GRN"} was recorded for PO ${payload.poNumber ?? ""}.`;
+    case "FINANCE_ACTION_REQUIRED":
+      return `PO ${payload.poNumber ?? ""} is ready for finance review.`;
+    case "FINANCE_MATCHED":
+    case "FINANCE_MISMATCH":
+      return `Invoice ${payload.invoiceNumber ?? ""} was ${formatWorkflowLabel(payload.status)} for PO ${payload.poNumber ?? ""}.`;
+    default:
+      return notification.subject;
+  }
+}
+
+function getNotificationContext(notification) {
+  const payload = notification.payload ?? {};
+  const values = [
+    payload.requisitionNumber,
+    payload.poNumber,
+    payload.grnNumber,
+    payload.invoiceNumber
+  ].filter(Boolean);
+
+  return values.length ? values.join(" | ") : null;
+}
+
 export function NotificationInbox({ token }) {
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -114,14 +163,16 @@ export function NotificationInbox({ token }) {
                 {notification.status}
               </span>
             </div>
-            <p>
-              {notification.template} | {notification.channel.toLowerCase()} |{" "}
-              {formatDateTime(notification.createdAt)}
-            </p>
+            <p>{getNotificationSummary(notification)}</p>
+            {getNotificationContext(notification) ? (
+              <small>{getNotificationContext(notification)}</small>
+            ) : null}
             <small>
-              Delivery: {notification.deliveryStatus}
+              {notification.template} | {notification.channel.toLowerCase()} |{" "}
+              {formatDateTime(notification.createdAt)} | Delivery: {notification.deliveryStatus}
               {notification.readAt ? ` | Read ${formatDateTime(notification.readAt)}` : ""}
             </small>
+            {notification.payload?.remarks ? <small>{notification.payload.remarks}</small> : null}
             {notification.status === "UNREAD" ? (
               <div className="decision-actions">
                 <button

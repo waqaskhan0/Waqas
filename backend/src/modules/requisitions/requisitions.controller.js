@@ -24,9 +24,9 @@ function parseRequisitionId(value) {
 
 export const createRequisitionController = asyncHandler(async (req, res) => {
   const payload = parseCreateRequisitionPayload(req.body);
-  const requisition = await createRequisition(req.user, payload);
+  const result = await createRequisition(req.user, payload);
 
-  res.status(201).json({ requisition });
+  res.status(201).json(result);
 });
 
 export const listMyRequisitionsController = asyncHandler(async (req, res) => {

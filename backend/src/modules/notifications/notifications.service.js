@@ -1,5 +1,14 @@
 import { getPool, query } from "../../config/db.js";
 import { ApiError } from "../../utils/apiError.js";
+import { ROLES } from "../../config/roles.js";
+
+function mapUserRecipient(row) {
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    email: row.email
+  };
+}
 
 function mapNotificationRecipient(row) {
   return {
@@ -32,6 +41,78 @@ function buildPreview(recipient) {
   };
 }
 
+function buildRecipient(user, channel = "EMAIL") {
+  return {
+    userId: user.id,
+    email: user.email ?? null,
+    name: user.fullName ?? null,
+    channel
+  };
+}
+
+function dedupeRecipients(recipients) {
+  const uniqueRecipients = new Map();
+
+  for (const recipient of recipients) {
+    if (!recipient?.userId) {
+      continue;
+    }
+
+    uniqueRecipients.set(
+      `${recipient.userId}:${recipient.channel ?? "EMAIL"}`,
+      {
+        ...recipient,
+        channel: recipient.channel ?? "EMAIL"
+      }
+    );
+  }
+
+  return [...uniqueRecipients.values()];
+}
+
+async function listActiveUsersByIds(userIds) {
+  const normalizedIds = [...new Set(userIds.filter((userId) => Number.isInteger(userId) && userId > 0))];
+
+  if (!normalizedIds.length) {
+    return [];
+  }
+
+  const placeholders = normalizedIds.map(() => "?").join(", ");
+  const rows = await query(
+    `
+      SELECT
+        id,
+        full_name,
+        email
+      FROM users
+      WHERE status = 'ACTIVE'
+        AND id IN (${placeholders})
+      ORDER BY full_name ASC
+    `,
+    normalizedIds
+  );
+
+  return rows.map(mapUserRecipient);
+}
+
+async function listActiveUsersByRole(roleCode) {
+  const rows = await query(
+    `
+      SELECT
+        id,
+        full_name,
+        email
+      FROM users
+      WHERE role_code = ?
+        AND status = 'ACTIVE'
+      ORDER BY full_name ASC
+    `,
+    [roleCode]
+  );
+
+  return rows.map(mapUserRecipient);
+}
+
 async function createNotification({
   eventType,
   entityType,
@@ -42,6 +123,12 @@ async function createNotification({
   triggeredByUserId = null,
   recipients
 }) {
+  const normalizedRecipients = dedupeRecipients(recipients ?? []);
+
+  if (!normalizedRecipients.length) {
+    return [];
+  }
+
   const pool = getPool();
   const connection = await pool.getConnection();
 
@@ -75,7 +162,7 @@ async function createNotification({
     const notificationId = notificationResult.insertId;
     const previews = [];
 
-    for (const recipient of recipients) {
+    for (const recipient of normalizedRecipients) {
       const [recipientResult] = await connection.execute(
         `
           INSERT INTO notification_recipients (
@@ -246,7 +333,7 @@ export async function sendRequisitionDecisionNotification({
   managerUserId,
   remarks
 }) {
-  const previews = await createNotification({
+  const requesterPreviews = await createNotification({
     eventType: `REQUISITION_${String(decision).toUpperCase()}`,
     entityType: "REQUISITION",
     entityId: requisitionId,
@@ -270,6 +357,53 @@ export async function sendRequisitionDecisionNotification({
     ]
   });
 
+  if (String(decision).toUpperCase() === "APPROVED") {
+    const inventoryUsers = await listActiveUsersByRole(ROLES.INVENTORY_OFFICER);
+
+    await createNotification({
+      eventType: "INVENTORY_ACTION_REQUIRED",
+      entityType: "REQUISITION",
+      entityId: requisitionId,
+      template: "inventory-action-required",
+      subject: `Inventory action needed for ${requisitionNumber}`,
+      payload: {
+        requisitionNumber,
+        requesterName: recipientName,
+        managerName,
+        remarks
+      },
+      triggeredByUserId: managerUserId,
+      recipients: inventoryUsers.map((user) => buildRecipient(user))
+    });
+  }
+
+  return requesterPreviews[0] ?? null;
+}
+
+export async function sendRequisitionSubmittedNotification({
+  requisitionId,
+  requisitionNumber,
+  title,
+  requesterName,
+  managerUserId,
+  triggeredByUserId
+}) {
+  const managers = await listActiveUsersByIds([managerUserId]);
+  const previews = await createNotification({
+    eventType: "REQUISITION_SUBMITTED",
+    entityType: "REQUISITION",
+    entityId: requisitionId,
+    template: "requisition-submitted",
+    subject: `Approval needed for ${requisitionNumber}`,
+    payload: {
+      requisitionNumber,
+      title,
+      requesterName
+    },
+    triggeredByUserId,
+    recipients: managers.map((manager) => buildRecipient(manager))
+  });
+
   return previews[0] ?? null;
 }
 
@@ -284,7 +418,7 @@ export async function sendInventoryProcessingNotification({
   inventoryOfficerUserId,
   remarks
 }) {
-  const previews = await createNotification({
+  const requesterPreviews = await createNotification({
     eventType: "INVENTORY_PROCESSED",
     entityType: "REQUISITION",
     entityId: requisitionId,
@@ -308,7 +442,28 @@ export async function sendInventoryProcessingNotification({
     ]
   });
 
-  return previews[0] ?? null;
+  if (["PROCUREMENT_PENDING", "PARTIALLY_FULFILLED"].includes(String(status).toUpperCase())) {
+    const procurementUsers = await listActiveUsersByRole(ROLES.PROCUREMENT_OFFICER);
+
+    await createNotification({
+      eventType: "PROCUREMENT_ACTION_REQUIRED",
+      entityType: "REQUISITION",
+      entityId: requisitionId,
+      template: "procurement-action-required",
+      subject: `Procurement action needed for ${requisitionNumber}`,
+      payload: {
+        requisitionNumber,
+        requesterName: recipientName,
+        inventoryOfficerName,
+        remarks,
+        status
+      },
+      triggeredByUserId: inventoryOfficerUserId,
+      recipients: procurementUsers.map((user) => buildRecipient(user))
+    });
+  }
+
+  return requesterPreviews[0] ?? null;
 }
 
 export async function sendPurchaseOrderCreatedNotification({
@@ -323,7 +478,7 @@ export async function sendPurchaseOrderCreatedNotification({
   procurementOfficerName,
   procurementOfficerUserId
 }) {
-  const previews = await createNotification({
+  const requesterPreviews = await createNotification({
     eventType: "PURCHASE_ORDER_CREATED",
     entityType: "PURCHASE_ORDER",
     entityId: poId ?? requisitionId,
@@ -347,7 +502,26 @@ export async function sendPurchaseOrderCreatedNotification({
     ]
   });
 
-  return previews[0] ?? null;
+  const receivingUsers = await listActiveUsersByRole(ROLES.INVENTORY_OFFICER);
+
+  await createNotification({
+    eventType: "GOODS_RECEIPT_REQUIRED",
+    entityType: "PURCHASE_ORDER",
+    entityId: poId ?? requisitionId,
+    template: "goods-receipt-required",
+    subject: `Goods receipt pending for ${poNumber}`,
+    payload: {
+      requisitionNumber,
+      poNumber,
+      requesterName: recipientName,
+      vendorName,
+      procurementOfficerName
+    },
+    triggeredByUserId: procurementOfficerUserId,
+    recipients: receivingUsers.map((user) => buildRecipient(user))
+  });
+
+  return requesterPreviews[0] ?? null;
 }
 
 export async function sendGoodsReceivedNotification({
@@ -363,7 +537,7 @@ export async function sendGoodsReceivedNotification({
   receiverUserId,
   purchaseOrderStatus
 }) {
-  const previews = await createNotification({
+  const requesterPreviews = await createNotification({
     eventType: "GOODS_RECEIVED",
     entityType: "PURCHASE_ORDER",
     entityId: poId ?? requisitionId,
@@ -388,7 +562,28 @@ export async function sendGoodsReceivedNotification({
     ]
   });
 
-  return previews[0] ?? null;
+  if (String(purchaseOrderStatus).toUpperCase() === "RECEIVED") {
+    const financeUsers = await listActiveUsersByRole(ROLES.FINANCE);
+
+    await createNotification({
+      eventType: "FINANCE_ACTION_REQUIRED",
+      entityType: "PURCHASE_ORDER",
+      entityId: poId ?? requisitionId,
+      template: "finance-action-required",
+      subject: `Finance review needed for ${poNumber}`,
+      payload: {
+        requisitionNumber,
+        poNumber,
+        grnNumber,
+        requesterName: recipientName,
+        receiverName
+      },
+      triggeredByUserId: receiverUserId,
+      recipients: financeUsers.map((user) => buildRecipient(user))
+    });
+  }
+
+  return requesterPreviews[0] ?? null;
 }
 
 export async function sendFinanceMatchNotification({

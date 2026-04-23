@@ -1,5 +1,8 @@
 import { getPool, query } from "../../config/db.js";
-import { sendRequisitionDecisionNotification } from "../notifications/notifications.service.js";
+import {
+  sendRequisitionDecisionNotification,
+  sendRequisitionSubmittedNotification
+} from "../notifications/notifications.service.js";
 import { ROLES } from "../../config/roles.js";
 import { ApiError } from "../../utils/apiError.js";
 
@@ -600,7 +603,20 @@ export async function createRequisition(user, payload) {
 
     await connection.commit();
 
-    return getRequisitionByIdForUser(requisitionId, user);
+    const requisition = await getRequisitionByIdForUser(requisitionId, user);
+    const notification = await sendRequisitionSubmittedNotification({
+      requisitionId,
+      requisitionNumber,
+      title: payload.title,
+      requesterName: user.fullName,
+      managerUserId: user.managerId,
+      triggeredByUserId: user.id
+    });
+
+    return {
+      requisition,
+      notification
+    };
   } catch (error) {
     await connection.rollback();
 
