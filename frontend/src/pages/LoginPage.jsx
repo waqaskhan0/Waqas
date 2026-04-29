@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
+const defaultPassword = "Password123!";
+
 const demoAccounts = [
   { role: "Employee", email: "employee@ims.local" },
   { role: "Line Manager", email: "manager@ims.local" },
@@ -14,13 +16,22 @@ export function LoginPage() {
   const { isAuthenticated, signIn } = useAuth();
   const [formValues, setFormValues] = useState({
     email: "employee@ims.local",
-    password: "Password123!"
+    password: defaultPassword
   });
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
+  }
+
+  function useDemoAccount(email) {
+    setFormValues({
+      email,
+      password: defaultPassword
+    });
+    setError("");
   }
 
   async function handleSubmit(event) {
@@ -39,33 +50,21 @@ export function LoginPage() {
 
   return (
     <main className="auth-shell">
-      <section className="auth-panel auth-panel-brand">
-        <p className="eyebrow">IMS Blueprint</p>
-        <h1>Requisition-to-Issue portal</h1>
-        <p className="lead">
-          Module 1 is now the foundation for employees, managers, inventory,
-          procurement, and finance to share one authenticated system.
-        </p>
-        <div className="module-list">
+      <section className="auth-panel auth-panel-form">
+        <div className="brand-lockup">
+          <img src="/assets/shehersaaz-logo.png" alt="Shehersaaz logo" />
           <div>
-            <span>Module 1</span>
-            <strong>Auth, roles, JWT sessions</strong>
-          </div>
-          <div>
-            <span>Module 2</span>
-            <strong>Requisition form and persistence</strong>
-          </div>
-          <div>
-            <span>Module 3</span>
-            <strong>Approval engine and email triggers</strong>
+            <strong>Shehersaaz IMS</strong>
+            <span>Inventory management portal</span>
           </div>
         </div>
-      </section>
 
-      <section className="auth-panel auth-panel-form">
         <div className="panel-header">
-          <p className="eyebrow">Sign in</p>
-          <h2>Role-based access</h2>
+          <p className="eyebrow">Welcome back</p>
+          <h1>Sign in to your workspace</h1>
+          <p className="lead">
+            Choose a demo role or enter your assigned account to continue.
+          </p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
@@ -87,7 +86,7 @@ export function LoginPage() {
           <label>
             Password
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={formValues.password}
               onChange={(event) =>
                 setFormValues((current) => ({
@@ -99,26 +98,66 @@ export function LoginPage() {
             />
           </label>
 
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={showPassword}
+              onChange={(event) => setShowPassword(event.target.checked)}
+            />
+            Show password
+          </label>
+
           {error ? <p className="form-error">{error}</p> : null}
 
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Signing in..." : "Login"}
+          <button type="submit" className="primary-action-button" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in..." : "Sign in"}
           </button>
         </form>
+      </section>
 
+      <aside className="auth-panel auth-panel-brand">
         <div className="demo-users">
-          <p className="demo-title">Seeded demo users</p>
+          <p className="eyebrow">Demo access</p>
+          <h2>Try any workflow</h2>
+          <p className="lead">
+            Pick a role to fill the sign-in form automatically.
+          </p>
           <ul>
             {demoAccounts.map((account) => (
               <li key={account.email}>
-                <strong>{account.role}</strong>
-                <span>{account.email}</span>
+                <button
+                  type="button"
+                  className={
+                    account.email === formValues.email
+                      ? "demo-account active"
+                      : "demo-account"
+                  }
+                  onClick={() => useDemoAccount(account.email)}
+                >
+                  <strong>{account.role}</strong>
+                  <span>{account.email}</span>
+                </button>
               </li>
             ))}
           </ul>
-          <p className="demo-footnote">Default password: Password123!</p>
+          <p className="demo-footnote">Default password is filled automatically.</p>
         </div>
-      </section>
+
+        <div className="module-list">
+          <div>
+            <span>Requests</span>
+            <strong>Create and track requisitions</strong>
+          </div>
+          <div>
+            <span>Approvals</span>
+            <strong>Review decisions by role</strong>
+          </div>
+          <div>
+            <span>Operations</span>
+            <strong>Inventory, procurement, GRN, finance</strong>
+          </div>
+        </div>
+      </aside>
     </main>
   );
 }
