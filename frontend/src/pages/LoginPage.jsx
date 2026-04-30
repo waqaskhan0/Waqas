@@ -5,30 +5,57 @@ import { useAuth } from "../context/AuthContext.jsx";
 const defaultPassword = "Password123!";
 
 const demoAccounts = [
-  { role: "Employee", email: "employee@ims.local" },
-  { role: "Line Manager", email: "manager@ims.local" },
-  { role: "Inventory Officer", email: "inventory@ims.local" },
-  { role: "Procurement Officer", email: "procurement@ims.local" },
-  { role: "Finance", email: "finance@ims.local" }
+  {
+    role: "EMPLOYEE",
+    label: "Employee",
+    name: "Ayaan Employee",
+    email: "employee@ims.local"
+  },
+  {
+    role: "LINE_MANAGER",
+    label: "Line Manager",
+    name: "Layla Manager",
+    email: "manager@ims.local"
+  },
+  {
+    role: "INVENTORY_OFFICER",
+    label: "Inventory Officer",
+    name: "Inaya Inventory",
+    email: "inventory@ims.local"
+  },
+  {
+    role: "PROCUREMENT_OFFICER",
+    label: "Procurement Officer",
+    name: "Omar Procurement",
+    email: "procurement@ims.local"
+  },
+  {
+    role: "FINANCE",
+    label: "Finance",
+    name: "Sara Finance",
+    email: "finance@ims.local"
+  }
 ];
 
 export function LoginPage() {
   const { isAuthenticated, signIn } = useAuth();
+  const [selectedRole, setSelectedRole] = useState(demoAccounts[0].role);
   const [formValues, setFormValues] = useState({
-    email: "employee@ims.local",
+    email: demoAccounts[0].email,
     password: defaultPassword
   });
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  function useDemoAccount(email) {
+  function selectDemoAccount(role) {
+    const account = demoAccounts.find((item) => item.role === role) ?? demoAccounts[0];
+    setSelectedRole(account.role);
     setFormValues({
-      email,
+      email: account.email,
       password: defaultPassword
     });
     setError("");
@@ -49,114 +76,77 @@ export function LoginPage() {
   }
 
   return (
-    <main className="auth-shell">
-      <section className="auth-panel auth-panel-form">
-        <div className="brand-lockup">
-          <img src="/assets/shehersaaz-logo.png" alt="Shehersaaz logo" />
-          <div>
-            <strong>Shehersaaz IMS</strong>
-            <span>Inventory management portal</span>
-          </div>
+    <main className="login-screen">
+      <section className="login-card">
+        <div className="login-logo">
+          Shehersaaz<span>IMS</span>
         </div>
+        <p className="login-subtitle">Enterprise resource and inventory workflow system</p>
 
-        <div className="panel-header">
-          <p className="eyebrow">Welcome back</p>
-          <h1>Sign in to your workspace</h1>
-          <p className="lead">
-            Choose a demo role or enter your assigned account to continue.
-          </p>
-        </div>
+        <form className="login-form" onSubmit={handleSubmit}>
+          <label className="login-field">
+            <span>Demo role</span>
+            <select
+              value={selectedRole}
+              onChange={(event) => selectDemoAccount(event.target.value)}
+              className="login-select"
+            >
+              {demoAccounts.map((account) => (
+                <option key={account.role} value={account.role}>
+                  {account.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label>
-            Email
+          <label className="login-field">
+            <span>Email</span>
             <input
               type="email"
               value={formValues.email}
               onChange={(event) =>
-                setFormValues((current) => ({
-                  ...current,
-                  email: event.target.value
-                }))
+                setFormValues((current) => ({ ...current, email: event.target.value }))
               }
+              className="login-input"
               required
             />
           </label>
 
-          <label>
-            Password
+          <label className="login-field">
+            <span>Password</span>
             <input
-              type={showPassword ? "text" : "password"}
+              type="password"
               value={formValues.password}
               onChange={(event) =>
-                setFormValues((current) => ({
-                  ...current,
-                  password: event.target.value
-                }))
+                setFormValues((current) => ({ ...current, password: event.target.value }))
               }
+              className="login-input"
               required
             />
-          </label>
-
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={showPassword}
-              onChange={(event) => setShowPassword(event.target.checked)}
-            />
-            Show password
           </label>
 
           {error ? <p className="form-error">{error}</p> : null}
 
-          <button type="submit" className="primary-action-button" disabled={isSubmitting}>
-            {isSubmitting ? "Signing in..." : "Sign in"}
+          <button type="submit" className="btn-login" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in..." : "Enter workspace"}
           </button>
         </form>
+
+        <p className="login-hint">Demo accounts use the default seeded password.</p>
       </section>
 
-      <aside className="auth-panel auth-panel-brand">
-        <div className="demo-users">
-          <p className="eyebrow">Demo access</p>
-          <h2>Try any workflow</h2>
-          <p className="lead">
-            Pick a role to fill the sign-in form automatically.
-          </p>
-          <ul>
-            {demoAccounts.map((account) => (
-              <li key={account.email}>
-                <button
-                  type="button"
-                  className={
-                    account.email === formValues.email
-                      ? "demo-account active"
-                      : "demo-account"
-                  }
-                  onClick={() => useDemoAccount(account.email)}
-                >
-                  <strong>{account.role}</strong>
-                  <span>{account.email}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="demo-footnote">Default password is filled automatically.</p>
-        </div>
-
-        <div className="module-list">
-          <div>
-            <span>Requests</span>
-            <strong>Create and track requisitions</strong>
-          </div>
-          <div>
-            <span>Approvals</span>
-            <strong>Review decisions by role</strong>
-          </div>
-          <div>
-            <span>Operations</span>
-            <strong>Inventory, procurement, GRN, finance</strong>
-          </div>
-        </div>
+      <aside className="login-roles">
+        {demoAccounts.map((account) => (
+          <button
+            key={account.role}
+            type="button"
+            className={account.role === selectedRole ? "role-chip active" : "role-chip"}
+            onClick={() => selectDemoAccount(account.role)}
+          >
+            <span>{account.label}</span>
+            <strong>{account.name}</strong>
+          </button>
+        ))}
       </aside>
     </main>
   );
