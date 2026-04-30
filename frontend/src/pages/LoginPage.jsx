@@ -8,44 +8,44 @@ const demoAccounts = [
   {
     role: "EMPLOYEE",
     label: "Employee",
-    name: "Ayaan Employee",
-    email: "employee@ims.local"
+    name: "Ahmad Raza",
+    email: "ahmad@company.com"
   },
   {
     role: "LINE_MANAGER",
     label: "Line Manager",
-    name: "Layla Manager",
-    email: "manager@ims.local"
+    name: "Kamran Malik",
+    email: "kamran@company.com"
   },
   {
     role: "INVENTORY_OFFICER",
     label: "Inventory Officer",
-    name: "Inaya Inventory",
-    email: "inventory@ims.local"
+    name: "Zubair Hassan",
+    email: "zubair@company.com"
   },
   {
     role: "PROCUREMENT_OFFICER",
     label: "Procurement Officer",
-    name: "Omar Procurement",
-    email: "procurement@ims.local"
+    name: "Asim Qureshi",
+    email: "asim@company.com"
   },
   {
     role: "FINANCE",
     label: "Finance",
-    name: "Sara Finance",
-    email: "finance@ims.local"
+    name: "Tariq Mehmood",
+    email: "tariq@company.com"
   },
   {
     role: "HR_OFFICER",
     label: "HR Officer",
-    name: "Nadia HR",
-    email: "hr@ims.local"
+    name: "Nadia Hussain",
+    email: "nadia@company.com"
   },
   {
     role: "SUPER_ADMIN",
     label: "Super Admin",
     name: "Super Admin",
-    email: "admin@ims.local"
+    email: "admin@company.com"
   }
 ];
 

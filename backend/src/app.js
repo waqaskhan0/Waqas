@@ -10,7 +10,26 @@ export const app = express();
 
 app.use(
   cors({
-    origin: env.clientUrl,
+    origin(origin, callback) {
+      if (!origin || env.clientUrls.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      if (env.nodeEnv !== "production") {
+        try {
+          const url = new URL(origin);
+          if (["localhost", "127.0.0.1"].includes(url.hostname)) {
+            callback(null, true);
+            return;
+          }
+        } catch (_error) {
+          // Fall through to the standard CORS rejection below.
+        }
+      }
+
+      callback(new Error(`Origin ${origin} is not allowed by CORS.`));
+    },
     credentials: true
   })
 );

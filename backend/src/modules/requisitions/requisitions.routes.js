@@ -18,7 +18,7 @@ requisitionsRouter.get(
   authorizeRoles(ROLES.LINE_MANAGER),
   listManagerRequisitionsController
 );
-requisitionsRouter.get("/my", authorizeRoles(ROLES.EMPLOYEE), listMyRequisitionsController);
+requisitionsRouter.get("/my", listMyRequisitionsController);
 requisitionsRouter.post(
   "/:id/approve",
   authorizeRoles(ROLES.LINE_MANAGER),
@@ -30,4 +30,4 @@ requisitionsRouter.post(
   rejectRequisitionController
 );
 requisitionsRouter.get("/:id", getRequisitionController);
-requisitionsRouter.post("/", authorizeRoles(ROLES.EMPLOYEE), createRequisitionController);
+requisitionsRouter.post("/", createRequisitionController);

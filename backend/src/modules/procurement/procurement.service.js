@@ -24,9 +24,12 @@ function mapVendor(row) {
     id: row.id,
     vendorCode: row.vendor_code,
     vendorName: row.vendor_name,
+    name: row.vendor_name,
+    category: row.category,
     contactName: row.contact_name,
     email: row.email,
     phone: row.phone,
+    address: row.address,
     status: row.status
   };
 }
@@ -57,17 +60,226 @@ export async function listVendors() {
         id,
         vendor_code,
         vendor_name,
+        category,
         contact_name,
         email,
         phone,
+        address,
         status
       FROM vendors
-      WHERE status = 'ACTIVE'
       ORDER BY vendor_name ASC
     `
   );
 
   return rows.map(mapVendor);
+}
+
+function normalizeVendorPayload(payload) {
+  const vendorName = String(payload.vendorName ?? payload.name ?? "").trim();
+  const category = String(payload.category ?? "").trim() || null;
+  const contactName = String(payload.contactName ?? payload.contact ?? "").trim() || null;
+  const email = String(payload.email ?? "").trim() || null;
+  const phone = String(payload.phone ?? "").trim() || null;
+  const address = String(payload.address ?? "").trim() || null;
+
+  if (!vendorName || vendorName.length > 160) {
+    throw new ApiError(400, "Vendor name is required and must be 160 characters or fewer.");
+  }
+
+  return {
+    vendorName,
+    category,
+    contactName,
+    email,
+    phone,
+    address
+  };
+}
+
+async function buildVendorCode() {
+  const rows = await query(`SELECT COUNT(*) AS total FROM vendors`);
+  return `VND-${String(Number(rows[0]?.total ?? 0) + 1).padStart(3, "0")}`;
+}
+
+export async function createVendor(payload) {
+  const vendor = normalizeVendorPayload(payload);
+  const vendorCode = String(payload.vendorCode ?? "").trim() || (await buildVendorCode());
+
+  try {
+    const result = await query(
+      `
+        INSERT INTO vendors (
+          vendor_code,
+          vendor_name,
+          category,
+          contact_name,
+          email,
+          phone,
+          address
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        vendorCode,
+        vendor.vendorName,
+        vendor.category,
+        vendor.contactName,
+        vendor.email,
+        vendor.phone,
+        vendor.address
+      ]
+    );
+
+    const rows = await query(
+      `
+        SELECT id, vendor_code, vendor_name, category, contact_name, email, phone, address, status
+        FROM vendors
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [result.insertId]
+    );
+
+    return mapVendor(rows[0]);
+  } catch (error) {
+    if (error.code === "ER_DUP_ENTRY") {
+      throw new ApiError(409, "A vendor with this code already exists.");
+    }
+
+    throw error;
+  }
+}
+
+export async function updateVendor(vendorId, payload) {
+  const vendor = normalizeVendorPayload(payload);
+  await query(
+    `
+      UPDATE vendors
+      SET vendor_name = ?,
+          category = ?,
+          contact_name = ?,
+          email = ?,
+          phone = ?,
+          address = ?
+      WHERE id = ?
+    `,
+    [
+      vendor.vendorName,
+      vendor.category,
+      vendor.contactName,
+      vendor.email,
+      vendor.phone,
+      vendor.address,
+      vendorId
+    ]
+  );
+
+  const rows = await query(
+    `
+      SELECT id, vendor_code, vendor_name, category, contact_name, email, phone, address, status
+      FROM vendors
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [vendorId]
+  );
+
+  if (!rows[0]) {
+    throw new ApiError(404, "Vendor was not found.");
+  }
+
+  return mapVendor(rows[0]);
+}
+
+export async function deactivateVendor(vendorId) {
+  await query(`UPDATE vendors SET status = 'INACTIVE' WHERE id = ?`, [vendorId]);
+}
+
+export async function listPurchaseOrders() {
+  const rows = await query(
+    `
+      SELECT
+        po.id,
+        po.po_number,
+        po.status,
+        po.order_date,
+        po.expected_delivery_date,
+        po.subtotal_amount,
+        vendor.vendor_name,
+        r.requisition_number,
+        COUNT(gr.id) AS grn_count
+      FROM purchase_orders po
+      INNER JOIN vendors vendor ON vendor.id = po.vendor_id
+      INNER JOIN requisitions r ON r.id = po.requisition_id
+      LEFT JOIN goods_receipts gr ON gr.purchase_order_id = po.id
+      GROUP BY
+        po.id,
+        po.po_number,
+        po.status,
+        po.order_date,
+        po.expected_delivery_date,
+        po.subtotal_amount,
+        vendor.vendor_name,
+        r.requisition_number
+      ORDER BY po.order_date DESC, po.id DESC
+    `
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    number: row.po_number,
+    poNumber: row.po_number,
+    vendor: row.vendor_name,
+    vendorName: row.vendor_name,
+    amount: Number(row.subtotal_amount),
+    delivery: row.expected_delivery_date,
+    status: String(row.status).toLowerCase(),
+    requisitionNumber: row.requisition_number,
+    grnCount: Number(row.grn_count)
+  }));
+}
+
+export async function listGoodsReceipts() {
+  const rows = await query(
+    `
+      SELECT
+        gr.id,
+        gr.grn_number,
+        gr.received_at,
+        po.po_number,
+        po.subtotal_amount,
+        vendor.vendor_name,
+        receiver.full_name AS receiver_name
+      FROM goods_receipts gr
+      INNER JOIN purchase_orders po ON po.id = gr.purchase_order_id
+      INNER JOIN vendors vendor ON vendor.id = po.vendor_id
+      INNER JOIN users receiver ON receiver.id = gr.received_by_user_id
+      ORDER BY gr.received_at DESC, gr.id DESC
+    `
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    number: row.grn_number,
+    grnNumber: row.grn_number,
+    po: row.po_number,
+    poNumber: row.po_number,
+    vendor: row.vendor_name,
+    amount: Number(row.subtotal_amount),
+    date: row.received_at,
+    receiver: row.receiver_name,
+    finance: "pending"
+  }));
+}
+
+export async function updatePurchaseOrderStatus(purchaseOrderId, status) {
+  const normalized = String(status ?? "").trim().toUpperCase();
+
+  if (!["DRAFT", "ISSUED", "PARTIALLY_RECEIVED", "RECEIVED", "PAID", "CANCELLED"].includes(normalized)) {
+    throw new ApiError(400, "Purchase order status is invalid.");
+  }
+
+  await query(`UPDATE purchase_orders SET status = ? WHERE id = ?`, [normalized, purchaseOrderId]);
 }
 
 export async function listProcurementQueue() {

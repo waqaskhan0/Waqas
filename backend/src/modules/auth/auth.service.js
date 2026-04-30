@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
 import { query } from "../../config/db.js";
 import { env } from "../../config/env.js";
+import { markSignIn } from "../attendance/attendance.service.js";
 import { ApiError } from "../../utils/apiError.js";
 
 function getSessionExpiryDate() {
@@ -131,6 +132,8 @@ export async function login({ email, password, ipAddress, userAgent }) {
     env.jwtSecret,
     { expiresIn: env.jwtExpiresIn }
   );
+
+  await markSignIn(user.id);
 
   return {
     token,

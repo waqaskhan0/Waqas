@@ -113,6 +113,40 @@ async function listActiveUsersByRole(roleCode) {
   return rows.map(mapUserRecipient);
 }
 
+async function listActiveUsersByDepartment(department) {
+  const rows = await query(
+    `
+      SELECT
+        id,
+        full_name,
+        email
+      FROM users
+      WHERE status = 'ACTIVE'
+        AND department = ?
+      ORDER BY full_name ASC
+    `,
+    [department]
+  );
+
+  return rows.map(mapUserRecipient);
+}
+
+async function listAllActiveUsers() {
+  const rows = await query(
+    `
+      SELECT
+        id,
+        full_name,
+        email
+      FROM users
+      WHERE status = 'ACTIVE'
+      ORDER BY full_name ASC
+    `
+  );
+
+  return rows.map(mapUserRecipient);
+}
+
 async function createNotification({
   eventType,
   entityType,
@@ -320,6 +354,91 @@ export async function markNotificationRead(userId, recipientId) {
   } finally {
     connection.release();
   }
+}
+
+export async function sendUserNotification({
+  userId,
+  subject,
+  message,
+  eventType = "GENERAL",
+  entityType = "SYSTEM",
+  entityId = null,
+  template = "general",
+  triggeredByUserId = null,
+  payload = {}
+}) {
+  const users = await listActiveUsersByIds([Number(userId)]);
+  const previews = await createNotification({
+    eventType,
+    entityType,
+    entityId,
+    template,
+    subject,
+    payload: {
+      message,
+      ...payload
+    },
+    triggeredByUserId,
+    recipients: users.map((user) => buildRecipient(user))
+  });
+
+  return previews[0] ?? null;
+}
+
+export async function sendRoleNotification({
+  role,
+  subject,
+  message,
+  eventType = "ROLE_ALERT",
+  entityType = "SYSTEM",
+  entityId = null,
+  template = "role-alert",
+  triggeredByUserId = null,
+  payload = {}
+}) {
+  const users = await listActiveUsersByRole(role);
+  return createNotification({
+    eventType,
+    entityType,
+    entityId,
+    template,
+    subject,
+    payload: {
+      message,
+      role,
+      ...payload
+    },
+    triggeredByUserId,
+    recipients: users.map((user) => buildRecipient(user))
+  });
+}
+
+export async function sendAnnouncementNotification({
+  subject,
+  message,
+  audience,
+  announcementId,
+  triggeredByUserId
+}) {
+  const normalizedAudience = String(audience ?? "All staff").trim();
+  const users =
+    normalizedAudience === "All staff" || normalizedAudience === "All"
+      ? await listAllActiveUsers()
+      : await listActiveUsersByDepartment(normalizedAudience);
+
+  return createNotification({
+    eventType: "ANNOUNCEMENT_CREATED",
+    entityType: "ANNOUNCEMENT",
+    entityId: announcementId,
+    template: "announcement",
+    subject,
+    payload: {
+      message,
+      audience: normalizedAudience
+    },
+    triggeredByUserId,
+    recipients: users.map((user) => buildRecipient(user))
+  });
 }
 
 export async function sendRequisitionDecisionNotification({

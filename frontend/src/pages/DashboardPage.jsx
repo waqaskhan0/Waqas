@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { apiClient } from "../api/client.js";
 import { EmployeeRequisitionWorkspace } from "../components/EmployeeRequisitionWorkspace.jsx";
 import {
   AdvancePanel,
@@ -416,8 +417,11 @@ export function DashboardPage() {
   const [demo, setDemo] = useState(initialDemoState);
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
 
   const config = roleConfig[user.role] ?? roleConfig.EMPLOYEE;
+  const isBackendSession = token && !token.startsWith("demo-session:");
   const activeNavItem =
     config.nav.find((item) => item.panel === activePanel) ?? config.nav[0];
 
@@ -447,11 +451,56 @@ export function DashboardPage() {
     setToast({ message, tone });
   }
 
+  const refreshWorkspace = useCallback(async () => {
+    if (!isBackendSession) {
+      return;
+    }
+
+    setIsWorkspaceLoading(true);
+    setWorkspaceError("");
+
+    try {
+      const response = await apiClient.getWorkspaceState(token);
+      setDemo((current) => ({
+        ...current,
+        ...response.state
+      }));
+    } catch (error) {
+      setWorkspaceError(error.message);
+    } finally {
+      setIsWorkspaceLoading(false);
+    }
+  }, [isBackendSession, token]);
+
+  useEffect(() => {
+    refreshWorkspace();
+  }, [refreshWorkspace]);
+
   function navigate(panel) {
     setActivePanel(panel);
   }
 
-  function approveLeave(leaveId) {
+  async function approveLeave(leaveId) {
+    if (isBackendSession) {
+      try {
+        if (user.role === "HR_OFFICER" || user.role === "SUPER_ADMIN") {
+          await apiClient.decideLeaveAsHr(token, leaveId, { action: "approve", note: "Approved" });
+        } else {
+          await apiClient.decideLeaveAsManager(token, leaveId, { action: "approve", note: "Approved" });
+        }
+        await refreshWorkspace();
+        showToast(
+          user.role === "HR_OFFICER" || user.role === "SUPER_ADMIN"
+            ? "Leave finally approved and balance updated."
+            : "Leave approved and forwarded to HR.",
+          "green"
+        );
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
+
     setDemo((current) => ({
       ...current,
       leaves: current.leaves.map((leave) =>
@@ -468,7 +517,29 @@ export function DashboardPage() {
     );
   }
 
-  function rejectLeave(leaveId) {
+  async function rejectLeave(leaveId) {
+    const note = window.prompt("Enter rejection reason");
+
+    if (!note) {
+      showToast("Rejection reason is required.", "red");
+      return;
+    }
+
+    if (isBackendSession) {
+      try {
+        if (user.role === "HR_OFFICER" || user.role === "SUPER_ADMIN") {
+          await apiClient.decideLeaveAsHr(token, leaveId, { action: "reject", note });
+        } else {
+          await apiClient.decideLeaveAsManager(token, leaveId, { action: "reject", note });
+        }
+        await refreshWorkspace();
+        showToast("Leave rejected and employee notified.", "red");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
+
     setDemo((current) => ({
       ...current,
       leaves: current.leaves.map((leave) =>
@@ -478,7 +549,7 @@ export function DashboardPage() {
     showToast("Leave rejected and employee notified.", "red");
   }
 
-  function submitLeave(event) {
+  async function submitLeave(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const days = Number(form.get("days") || 0);
@@ -487,6 +558,25 @@ export function DashboardPage() {
 
     if (balance && days > balance.remaining) {
       showToast("Leave request blocked because it exceeds your available balance.", "red");
+      return;
+    }
+
+    if (isBackendSession) {
+      try {
+        await apiClient.createLeave(token, {
+          type: form.get("type"),
+          days,
+          start: form.get("start"),
+          end: form.get("end"),
+          handover: form.get("handover"),
+          reason: form.get("reason")
+        });
+        event.currentTarget.reset();
+        await refreshWorkspace();
+        showToast("Leave request submitted for manager approval.", "blue");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
       return;
     }
 
@@ -512,10 +602,26 @@ export function DashboardPage() {
     showToast("Leave request submitted for manager approval.", "blue");
   }
 
-  function submitAdvance(event) {
+  async function submitAdvance(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const amount = Number(form.get("amount") || 0).toLocaleString();
+
+    if (isBackendSession) {
+      try {
+        await apiClient.createAdvance(token, {
+          amount: form.get("amount"),
+          reason: form.get("reason"),
+          repaymentMonths: Number(String(form.get("repayment") ?? "1").match(/\d+/)?.[0] ?? 1)
+        });
+        event.currentTarget.reset();
+        await refreshWorkspace();
+        showToast("Advance request submitted to Finance.", "blue");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
 
     setDemo((current) => ({
       ...current,
@@ -534,13 +640,31 @@ export function DashboardPage() {
     showToast("Advance request submitted to Finance.", "blue");
   }
 
-  function submitReimbursement(event) {
+  async function submitReimbursement(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const amount = Number(form.get("amount") || 0);
 
     if (amount > 10000) {
       showToast("Claim blocked because it exceeds the PKR 10,000 monthly limit.", "red");
+      return;
+    }
+
+    if (isBackendSession) {
+      try {
+        await apiClient.createReimbursement(token, {
+          type: form.get("type"),
+          amount,
+          date: form.get("date"),
+          receipt: form.get("receipt"),
+          description: form.get("description")
+        });
+        event.currentTarget.reset();
+        await refreshWorkspace();
+        showToast("Reimbursement claim submitted with receipt reference.", "blue");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
       return;
     }
 
@@ -563,9 +687,25 @@ export function DashboardPage() {
     showToast("Reimbursement claim submitted with receipt reference.", "blue");
   }
 
-  function submitAnnouncement(event) {
+  async function submitAnnouncement(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+
+    if (isBackendSession) {
+      try {
+        await apiClient.createAnnouncement(token, {
+          title: form.get("title"),
+          content: form.get("message"),
+          audience: form.get("audience")
+        });
+        event.currentTarget.reset();
+        await refreshWorkspace();
+        showToast("Announcement published and notifications queued.", "green");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
 
     setDemo((current) => ({
       ...current,
@@ -585,10 +725,28 @@ export function DashboardPage() {
     showToast("Announcement published and notifications queued.", "green");
   }
 
-  function submitUser(event) {
+  async function submitUser(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "").trim().toLowerCase();
+
+    if (isBackendSession) {
+      try {
+        await apiClient.createUser(token, {
+          fullName: form.get("fullName"),
+          email,
+          password: "Password123!",
+          role: form.get("role"),
+          department: form.get("department")
+        });
+        event.currentTarget.reset();
+        await refreshWorkspace();
+        showToast("User account created and role assigned.", "green");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
 
     if (demo.users.some((existingUser) => existingUser.email === email)) {
       showToast("A user with this email already exists.", "red");
@@ -624,7 +782,29 @@ export function DashboardPage() {
     showToast("User account created and role assigned.", "green");
   }
 
-  function toggleUserStatus(email) {
+  async function toggleUserStatus(email) {
+    if (isBackendSession) {
+      const account = demo.users.find((userAccount) => userAccount.email === email);
+
+      if (!account?.id) {
+        showToast("Cannot update this account without a backend user id.", "red");
+        return;
+      }
+
+      try {
+        if (account.status === "active") {
+          await apiClient.deactivateUser(token, account.id);
+        } else {
+          await apiClient.activateUser(token, account.id);
+        }
+        await refreshWorkspace();
+        showToast("User status updated without deleting audit history.", "green");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
+
     setDemo((current) => ({
       ...current,
       users: current.users.map((account) =>
@@ -657,8 +837,27 @@ export function DashboardPage() {
     }));
   }
 
-  function moveTask(taskId) {
+  async function moveTask(taskId) {
     const order = ["todo", "pending", "done"];
+    const selectedTask = demo.tasks.find((task) => task.id === taskId);
+    const selectedNextColumn = selectedTask
+      ? order[(order.indexOf(selectedTask.col) + 1) % order.length]
+      : "todo";
+
+    if (isBackendSession && selectedTask) {
+      try {
+        await apiClient.updateTask(token, taskId, {
+          title: selectedTask.title,
+          col: selectedNextColumn,
+          dueDate: selectedTask.dueDate ?? selectedTask.due
+        });
+        await refreshWorkspace();
+        showToast("Task moved to the next column.", "green");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
 
     setDemo((current) => ({
       ...current,
@@ -674,7 +873,25 @@ export function DashboardPage() {
     showToast("Task moved to the next column.", "green");
   }
 
-  function releasePayment(poId) {
+  async function releasePayment(poId) {
+    if (isBackendSession) {
+      const po = demo.purchaseOrders.find((item) => item.id === poId);
+      const amount = Number(String(po?.amount ?? "0").replace(/[^\d.]/g, ""));
+
+      try {
+        await apiClient.releasePoPayment(token, poId, {
+          amount: amount || 1,
+          paymentDate: new Date().toISOString().slice(0, 10),
+          reference: `PAY-${Date.now()}`
+        });
+        await refreshWorkspace();
+        showToast("Vendor payment released and receipt saved.", "green");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
+
     setDemo((current) => ({
       ...current,
       purchaseOrders: current.purchaseOrders.map((po) =>
@@ -696,7 +913,25 @@ export function DashboardPage() {
     showToast("Vendor payment released and receipt saved.", "green");
   }
 
-  function updateAdvance(advanceId, status) {
+  async function updateAdvance(advanceId, status) {
+    if (isBackendSession) {
+      const advance = demo.advances.find((item) => item.id === advanceId);
+      const approvedAmount = Number(String(advance?.amount ?? "0").replace(/[^\d.]/g, ""));
+
+      try {
+        await apiClient.decideAdvance(token, advanceId, {
+          action: status === "approved" ? "approve" : "reject",
+          approvedAmount: approvedAmount || undefined,
+          note: status === "approved" ? "Approved" : "Rejected by finance"
+        });
+        await refreshWorkspace();
+        showToast(`Advance request ${status}.`, status === "approved" ? "green" : "red");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
+
     setDemo((current) => ({
       ...current,
       advances: current.advances.map((advance) =>
@@ -706,7 +941,21 @@ export function DashboardPage() {
     showToast(`Advance request ${status}.`, status === "approved" ? "green" : "red");
   }
 
-  function approveReimbursement(claimId) {
+  async function approveReimbursement(claimId) {
+    if (isBackendSession) {
+      try {
+        await apiClient.decideReimbursement(token, claimId, {
+          action: "approve",
+          note: "Approved"
+        });
+        await refreshWorkspace();
+        showToast("Reimbursement approved for payment.", "green");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
+
     setDemo((current) => ({
       ...current,
       reimbursements: current.reimbursements.map((claim) =>
@@ -716,7 +965,22 @@ export function DashboardPage() {
     showToast("Reimbursement approved for payment.", "green");
   }
 
-  function createPayroll() {
+  async function createPayroll() {
+    if (isBackendSession) {
+      try {
+        const now = new Date();
+        await apiClient.generatePayroll(token, {
+          month: now.getMonth() + 1,
+          year: now.getFullYear()
+        });
+        await refreshWorkspace();
+        showToast("Payroll draft created.", "blue");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
+
     showToast("May payroll draft created.", "blue");
   }
 
@@ -878,9 +1142,34 @@ export function DashboardPage() {
     }
   }
 
-  function handleQuickItemSubmit(event) {
+  async function handleQuickItemSubmit(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+
+    if (isBackendSession) {
+      try {
+        await apiClient.createRequisition(token, {
+          title: `${form.get("item")} request`,
+          justification: form.get("reason") || "Quick item request from dashboard.",
+          neededByDate: new Date().toISOString().slice(0, 10),
+          items: [
+            {
+              description: form.get("item"),
+              specification: form.get("reason") || "",
+              quantity: Number(form.get("qty") || 1),
+              unit: "pcs",
+              estimatedUnitCost: ""
+            }
+          ]
+        });
+        closeModal();
+        await refreshWorkspace();
+        showToast("Quick request submitted and queued for manager review.", "blue");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
+      return;
+    }
 
     setDemo((current) => ({
       ...current,
@@ -901,13 +1190,29 @@ export function DashboardPage() {
     showToast("Quick request submitted and queued for manager review.", "blue");
   }
 
-  function handleTaskSubmit(event) {
+  async function handleTaskSubmit(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const title = String(form.get("title") ?? "").trim();
 
     if (!title) {
       showToast("Please enter a task title.", "red");
+      return;
+    }
+
+    if (isBackendSession) {
+      try {
+        await apiClient.createTask(token, {
+          title,
+          col: form.get("col"),
+          dueDate: form.get("due")
+        });
+        closeModal();
+        await refreshWorkspace();
+        showToast("Task added to the work plan.", "green");
+      } catch (error) {
+        showToast(error.message, "red");
+      }
       return;
     }
 
@@ -1013,7 +1318,11 @@ export function DashboardPage() {
           </div>
         </header>
 
-        <div className="content">{renderPanel()}</div>
+        <div className="content">
+          {isWorkspaceLoading ? <p className="helper-text">Refreshing workspace data...</p> : null}
+          {workspaceError ? <p className="form-error">{workspaceError}</p> : null}
+          {renderPanel()}
+        </div>
       </section>
 
       {toast ? <div id="toast" className={toast.tone}>{toast.message}</div> : null}

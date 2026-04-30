@@ -1,7 +1,11 @@
 import { getPool, query } from "../../config/db.js";
-import { sendInventoryProcessingNotification } from "../notifications/notifications.service.js";
+import {
+  sendInventoryProcessingNotification,
+  sendRoleNotification
+} from "../notifications/notifications.service.js";
 import { getRequisitionByIdForUser } from "../requisitions/requisitions.service.js";
 import { ApiError } from "../../utils/apiError.js";
+import { ROLES } from "../../config/roles.js";
 
 function mapStockItem(row) {
   return {
@@ -12,6 +16,24 @@ function mapStockItem(row) {
     unit: row.unit,
     quantityOnHand: Number(row.quantity_on_hand),
     reorderLevel: Number(row.reorder_level)
+  };
+}
+
+function mapTransaction(row) {
+  return {
+    id: row.id,
+    stockItemId: row.stock_item_id,
+    itemName: row.item_name,
+    sku: row.sku,
+    type: row.transaction_type,
+    quantity: Number(row.quantity),
+    reference: row.requisition_number ?? row.notes,
+    notes: row.notes,
+    createdAt: row.created_at,
+    actor: {
+      id: row.actor_user_id,
+      fullName: row.actor_name
+    }
   };
 }
 
@@ -50,6 +72,229 @@ export async function listInventoryStock() {
   );
 
   return rows.map(mapStockItem);
+}
+
+export async function createStockItem(payload) {
+  const sku = String(payload.sku ?? "").trim();
+  const itemName = String(payload.itemName ?? payload.name ?? "").trim();
+  const specification = String(payload.specification ?? "").trim() || null;
+  const unit = String(payload.unit ?? "pcs").trim();
+  const quantityOnHand = Number(payload.quantityOnHand ?? payload.quantity ?? 0);
+  const reorderLevel = Number(payload.reorderLevel ?? payload.minLevel ?? payload.min ?? 0);
+
+  if (!sku || !itemName || !unit) {
+    throw new ApiError(400, "SKU, item name, and unit are required.");
+  }
+
+  if (![quantityOnHand, reorderLevel].every((value) => Number.isFinite(value) && value >= 0)) {
+    throw new ApiError(400, "Stock quantities must be zero or greater.");
+  }
+
+  try {
+    const result = await query(
+      `
+        INSERT INTO inventory_stock (
+          sku,
+          item_name,
+          specification,
+          unit,
+          quantity_on_hand,
+          reorder_level
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [sku, itemName, specification, unit, quantityOnHand, reorderLevel]
+    );
+
+    const rows = await query(
+      `
+        SELECT id, sku, item_name, specification, unit, quantity_on_hand, reorder_level
+        FROM inventory_stock
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [result.insertId]
+    );
+
+    return mapStockItem(rows[0]);
+  } catch (error) {
+    if (error.code === "ER_DUP_ENTRY") {
+      throw new ApiError(409, "A stock item with this SKU already exists.");
+    }
+
+    throw error;
+  }
+}
+
+export async function updateStockItem(stockItemId, payload) {
+  const sku = String(payload.sku ?? "").trim();
+  const itemName = String(payload.itemName ?? payload.name ?? "").trim();
+  const specification = String(payload.specification ?? "").trim() || null;
+  const unit = String(payload.unit ?? "pcs").trim();
+  const reorderLevel = Number(payload.reorderLevel ?? payload.minLevel ?? payload.min ?? 0);
+
+  if (!sku || !itemName || !unit) {
+    throw new ApiError(400, "SKU, item name, and unit are required.");
+  }
+
+  if (!Number.isFinite(reorderLevel) || reorderLevel < 0) {
+    throw new ApiError(400, "Reorder level must be zero or greater.");
+  }
+
+  await query(
+    `
+      UPDATE inventory_stock
+      SET sku = ?,
+          item_name = ?,
+          specification = ?,
+          unit = ?,
+          reorder_level = ?
+      WHERE id = ?
+    `,
+    [sku, itemName, specification, unit, reorderLevel, stockItemId]
+  );
+
+  const rows = await query(
+    `
+      SELECT id, sku, item_name, specification, unit, quantity_on_hand, reorder_level
+      FROM inventory_stock
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [stockItemId]
+  );
+
+  if (!rows[0]) {
+    throw new ApiError(404, "Stock item was not found.");
+  }
+
+  return mapStockItem(rows[0]);
+}
+
+export async function stockIn(inventoryUser, payload) {
+  const stockItemId = Number(payload.inventoryItemId ?? payload.stockItemId);
+  const quantity = Number(payload.quantity);
+  const reference = String(payload.reference ?? "").trim();
+  const note = String(payload.note ?? payload.notes ?? "").trim();
+
+  if (!Number.isInteger(stockItemId) || stockItemId <= 0) {
+    throw new ApiError(400, "A valid stock item id is required.");
+  }
+
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new ApiError(400, "Stock-in quantity must be greater than zero.");
+  }
+
+  await query(
+    `
+      UPDATE inventory_stock
+      SET quantity_on_hand = quantity_on_hand + ?
+      WHERE id = ?
+    `,
+    [quantity, stockItemId]
+  );
+
+  await query(
+    `
+      INSERT INTO inventory_transactions (
+        stock_item_id,
+        actor_user_id,
+        transaction_type,
+        quantity,
+        notes
+      )
+      VALUES (?, ?, 'ADJUSTMENT_IN', ?, ?)
+    `,
+    [stockItemId, inventoryUser.id, quantity, [reference, note].filter(Boolean).join(" | ") || null]
+  );
+
+  const rows = await query(
+    `
+      SELECT id, sku, item_name, specification, unit, quantity_on_hand, reorder_level
+      FROM inventory_stock
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [stockItemId]
+  );
+
+  return mapStockItem(rows[0]);
+}
+
+export async function listLowStockItems() {
+  const rows = await query(
+    `
+      SELECT id, sku, item_name, specification, unit, quantity_on_hand, reorder_level
+      FROM inventory_stock
+      WHERE quantity_on_hand <= reorder_level
+      ORDER BY quantity_on_hand ASC, item_name ASC
+    `
+  );
+
+  return rows.map(mapStockItem);
+}
+
+export async function listInventoryTransactions({ dateFrom, dateTo } = {}) {
+  const params = [];
+  const filters = ["1 = 1"];
+
+  if (dateFrom) {
+    filters.push("DATE(t.created_at) >= ?");
+    params.push(String(dateFrom).slice(0, 10));
+  }
+
+  if (dateTo) {
+    filters.push("DATE(t.created_at) <= ?");
+    params.push(String(dateTo).slice(0, 10));
+  }
+
+  const rows = await query(
+    `
+      SELECT
+        t.*,
+        stock.item_name,
+        stock.sku,
+        actor.full_name AS actor_name,
+        r.requisition_number
+      FROM inventory_transactions t
+      INNER JOIN inventory_stock stock ON stock.id = t.stock_item_id
+      INNER JOIN users actor ON actor.id = t.actor_user_id
+      LEFT JOIN requisitions r ON r.id = t.requisition_id
+      WHERE ${filters.join(" AND ")}
+      ORDER BY t.created_at DESC, t.id DESC
+    `,
+    params
+  );
+
+  return rows.map(mapTransaction);
+}
+
+async function notifyProcurementForLowStock(stockItemIds) {
+  if (!stockItemIds.length) {
+    return;
+  }
+
+  const placeholders = stockItemIds.map(() => "?").join(", ");
+  const rows = await query(
+    `
+      SELECT item_name, quantity_on_hand, reorder_level
+      FROM inventory_stock
+      WHERE id IN (${placeholders})
+        AND quantity_on_hand <= reorder_level
+    `,
+    stockItemIds
+  );
+
+  for (const item of rows) {
+    await sendRoleNotification({
+      role: ROLES.PROCUREMENT_OFFICER,
+      subject: `Low stock alert: ${item.item_name}`,
+      message: `${item.item_name} has ${Number(item.quantity_on_hand)} remaining. Minimum level is ${Number(item.reorder_level)}.`,
+      eventType: "LOW_STOCK_ALERT",
+      entityType: "INVENTORY",
+      triggeredByUserId: null
+    });
+  }
 }
 
 export async function listInventoryQueue() {
@@ -420,6 +665,8 @@ export async function processInventoryDecision(inventoryUser, requisitionId, pay
     );
 
     await connection.commit();
+
+    await notifyProcurementForLowStock([...stockUsage.keys()]);
 
     const requisitionDetail = await getRequisitionByIdForUser(requisitionId, inventoryUser);
     const notification = await sendInventoryProcessingNotification({
