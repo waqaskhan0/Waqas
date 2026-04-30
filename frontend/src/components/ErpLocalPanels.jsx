@@ -1,5 +1,7 @@
 const statusTone = {
   pending: "amber",
+  "pending manager": "amber",
+  "pending HR": "amber",
   approved: "green",
   rejected: "red",
   paid: "green",
@@ -8,7 +10,9 @@ const statusTone = {
   open: "blue",
   issued: "green",
   received: "green",
-  active: "green"
+  active: "green",
+  inactive: "gray",
+  deactivated: "red"
 };
 
 const roleDashboardStats = {
@@ -41,6 +45,18 @@ const roleDashboardStats = {
     ["Payments pending", "2", "vendor releases", "red"],
     ["Payroll", "370K", "April processed", "green"],
     ["Reimbursements", "2", "awaiting review", "blue"]
+  ],
+  HR_OFFICER: [
+    ["Leave approvals", "3", "pending final action", "amber"],
+    ["Present today", "42", "out of 50 staff", "green"],
+    ["On leave", "3", "approved today", "blue"],
+    ["New joiners", "2", "this month", "purple"]
+  ],
+  SUPER_ADMIN: [
+    ["Active users", "7", "role accounts", "green"],
+    ["Pending requests", "9", "across modules", "amber"],
+    ["Low stock", "2", "auto-forwarded", "red"],
+    ["Audit events", "128", "today", "blue"]
   ]
 };
 
@@ -52,7 +68,9 @@ export function OverviewPanel({ role, demo, onNavigate, onOpenModal }) {
   const stats = roleDashboardStats[role] ?? roleDashboardStats.EMPLOYEE;
   const lowStock = demo.stock.filter((item) => item.qty <= item.min);
   const pendingRequests = demo.requests.filter((request) => request.status === "pending");
-  const pendingLeaves = demo.leaves.filter((leave) => leave.status === "pending");
+  const pendingLeaves = demo.leaves.filter((leave) =>
+    ["pending", "pending manager", "pending HR"].includes(leave.status)
+  );
 
   return (
     <div className="workspace-stack">
@@ -82,6 +100,10 @@ export function OverviewPanel({ role, demo, onNavigate, onOpenModal }) {
                   onNavigate("procurement");
                 } else if (role === "FINANCE") {
                   onNavigate("finance-match");
+                } else if (role === "HR_OFFICER") {
+                  onNavigate("leave-admin");
+                } else if (role === "SUPER_ADMIN") {
+                  onNavigate("admin-users");
                 } else {
                   onNavigate("employee-requests");
                 }
@@ -103,6 +125,10 @@ export function OverviewPanel({ role, demo, onNavigate, onOpenModal }) {
             <PurchaseOrderPreview purchaseOrders={demo.purchaseOrders} onNavigate={onNavigate} />
           ) : role === "FINANCE" ? (
             <FinancePreview advances={demo.advances} reimbursements={demo.reimbursements} />
+          ) : role === "HR_OFFICER" ? (
+            <HrPreview leaves={pendingLeaves} onNavigate={onNavigate} />
+          ) : role === "SUPER_ADMIN" ? (
+            <AdminPreview demo={demo} onNavigate={onNavigate} />
           ) : (
             <EmployeePreview onNavigate={onNavigate} onOpenModal={onOpenModal} />
           )}
@@ -329,6 +355,46 @@ function FinancePreview({ advances, reimbursements }) {
   );
 }
 
+function HrPreview({ leaves, onNavigate }) {
+  return (
+    <div className="action-stack">
+      <div className="summary-strip">
+        <div className="summary-tile">
+          <span>Leave actions</span>
+          <strong>{leaves.length}</strong>
+        </div>
+        <div className="summary-tile">
+          <span>Announcements</span>
+          <strong>2</strong>
+        </div>
+      </div>
+      <div className="button-row">
+        <button type="button" className="btn btn-primary" onClick={() => onNavigate("leave-admin")}>
+          Final approvals
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => onNavigate("announcements")}>
+          Publish news
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AdminPreview({ demo, onNavigate }) {
+  return (
+    <div className="summary-strip">
+      <button type="button" className="summary-tile tile-button" onClick={() => onNavigate("admin-users")}>
+        <span>User accounts</span>
+        <strong>{demo.users?.length ?? 0}</strong>
+      </button>
+      <button type="button" className="summary-tile tile-button" onClick={() => onNavigate("audit")}>
+        <span>Audit log</span>
+        <strong>{demo.auditLogs.length}</strong>
+      </button>
+    </div>
+  );
+}
+
 export function LocalRequestsPanel({ demo, onOpenModal, onNavigate }) {
   return (
     <div className="workspace-stack">
@@ -403,55 +469,79 @@ export function LocalRequestsPanel({ demo, onOpenModal, onNavigate }) {
   );
 }
 
-export function LeavePanel({ onSubmitLeave }) {
+export function LeavePanel({ onSubmitLeave, leaveBalances = [] }) {
   return (
-    <article className="card form-card">
-      <h2 className="card-title">Apply for leave</h2>
-      <form className="form-grid" onSubmit={onSubmitLeave}>
-        <label className="form-group">
-          <span className="form-label">Leave type</span>
-          <select name="type" className="form-select" defaultValue="Annual Leave">
-            <option>Annual Leave</option>
-            <option>Sick Leave</option>
-            <option>Casual Leave</option>
-            <option>Maternity/Paternity</option>
-          </select>
-        </label>
-        <label className="form-group">
-          <span className="form-label">Total days</span>
-          <input name="days" className="form-input" type="number" min="1" defaultValue="1" />
-        </label>
-        <label className="form-group">
-          <span className="form-label">Start date</span>
-          <input name="start" className="form-input" type="date" defaultValue="2026-05-05" />
-        </label>
-        <label className="form-group">
-          <span className="form-label">End date</span>
-          <input name="end" className="form-input" type="date" defaultValue="2026-05-06" />
-        </label>
-        <label className="form-group full">
-          <span className="form-label">Reason</span>
-          <textarea
-            name="reason"
-            className="form-textarea"
-            placeholder="Short reason for leave"
-            required
-          />
-        </label>
-        <div className="modal-footer full">
-          <button type="submit" className="btn btn-primary">
-            Submit leave request
-          </button>
+    <div className="two-col">
+      <article className="card form-card">
+        <h2 className="card-title">Apply for leave</h2>
+        <form className="form-grid" onSubmit={onSubmitLeave}>
+          <label className="form-group">
+            <span className="form-label">Leave type</span>
+            <select name="type" className="form-select" defaultValue="Annual Leave">
+              <option>Annual Leave</option>
+              <option>Sick Leave</option>
+              <option>Casual Leave</option>
+              <option>Maternity/Paternity</option>
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Total days</span>
+            <input name="days" className="form-input" type="number" min="0.5" step="0.5" defaultValue="1" />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Start date</span>
+            <input name="start" className="form-input" type="date" defaultValue="2026-05-05" />
+          </label>
+          <label className="form-group">
+            <span className="form-label">End date</span>
+            <input name="end" className="form-input" type="date" defaultValue="2026-05-06" />
+          </label>
+          <label className="form-group full">
+            <span className="form-label">Handover person</span>
+            <input name="handover" className="form-input" placeholder="Colleague covering your work" required />
+          </label>
+          <label className="form-group full">
+            <span className="form-label">Reason</span>
+            <textarea
+              name="reason"
+              className="form-textarea"
+              placeholder="Short reason for leave"
+              required
+            />
+          </label>
+          <div className="modal-footer full">
+            <button type="submit" className="btn btn-primary">
+              Submit leave request
+            </button>
+          </div>
+        </form>
+      </article>
+      <article className="card">
+        <h2 className="card-title">Leave balance</h2>
+        <div className="summary-strip">
+          {leaveBalances.map((balance) => (
+            <div key={balance.type} className="summary-tile">
+              <span>{balance.type}</span>
+              <strong>{balance.remaining}</strong>
+              <small>{balance.used} used of {balance.total}</small>
+            </div>
+          ))}
         </div>
-      </form>
-    </article>
+        <div className="decision-banner">
+          <strong>Policy guardrails</strong>
+          <span>Negative balances are blocked. Half-day leave counts as 0.5 days.</span>
+        </div>
+      </article>
+    </div>
   );
 }
 
-export function LeaveAdminPanel({ leaves, onApproveLeave, onRejectLeave }) {
+export function LeaveAdminPanel({ leaves, onApproveLeave, onRejectLeave, mode = "manager" }) {
+  const actionableStatuses = mode === "hr" ? ["pending HR", "pending"] : ["pending", "pending manager"];
+
   return (
     <article className="card">
-      <h2 className="card-title">Leave management</h2>
+      <h2 className="card-title">{mode === "hr" ? "HR final leave approval" : "Leave management"}</h2>
       <div className="table-wrap">
         <table>
           <thead>
@@ -477,7 +567,7 @@ export function LeaveAdminPanel({ leaves, onApproveLeave, onRejectLeave }) {
                   <Badge tone={statusTone[leave.status] ?? "gray"}>{leave.status}</Badge>
                 </td>
                 <td>
-                  {leave.status === "pending" ? (
+                  {actionableStatuses.includes(leave.status) ? (
                     <div className="button-row table-actions">
                       <button
                         type="button"
@@ -578,9 +668,37 @@ export function AttendancePanel({ role }) {
   ];
 
   return (
-    <div className="two-col">
+    <div className="workspace-stack">
+      {role === "HR_OFFICER" || role === "SUPER_ADMIN" ? (
+        <article className="card">
+          <div className="form-grid">
+            <label className="form-group">
+              <span className="form-label">Department</span>
+              <select className="form-select" defaultValue="All departments">
+                <option>All departments</option>
+                <option>Operations</option>
+                <option>Finance</option>
+                <option>Human Resources</option>
+                <option>Stores</option>
+                <option>Procurement</option>
+              </select>
+            </label>
+            <label className="form-group">
+              <span className="form-label">Date</span>
+              <input className="form-input" type="date" defaultValue="2026-04-30" />
+            </label>
+          </div>
+        </article>
+      ) : null}
+      <div className="two-col">
       <article className="card">
-        <h2 className="card-title">{role === "LINE_MANAGER" ? "Team attendance" : "My attendance"}</h2>
+        <h2 className="card-title">
+          {role === "LINE_MANAGER"
+            ? "Team attendance"
+            : role === "HR_OFFICER" || role === "SUPER_ADMIN"
+              ? "Company attendance"
+              : "My attendance"}
+        </h2>
         <div className="att-grid">
           {days.map((day, index) => (
             <div
@@ -625,6 +743,7 @@ export function AttendancePanel({ role }) {
           </table>
         </div>
       </article>
+      </div>
     </div>
   );
 }
@@ -959,6 +1078,415 @@ export function PayrollPanel({ onCreatePayroll }) {
         Total payroll: <strong>PKR 499,100</strong>
       </div>
     </article>
+  );
+}
+
+export function ReimbursementClaimPanel({ reimbursements, onSubmitReimbursement }) {
+  return (
+    <div className="two-col">
+      <article className="card">
+        <h2 className="card-title">Submit reimbursement claim</h2>
+        <form className="form-grid" onSubmit={onSubmitReimbursement}>
+          <label className="form-group">
+            <span className="form-label">Claim type</span>
+            <select name="type" className="form-select" defaultValue="Travel">
+              <option>Travel</option>
+              <option>Medical</option>
+              <option>Office supplies</option>
+              <option>Client expense</option>
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Amount</span>
+            <input name="amount" className="form-input" type="number" min="1" max="10000" defaultValue="4500" />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Expense date</span>
+            <input name="date" className="form-input" type="date" defaultValue="2026-04-27" />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Receipt reference</span>
+            <input name="receipt" className="form-input" placeholder="Receipt or invoice number" required />
+          </label>
+          <label className="form-group full">
+            <span className="form-label">Description</span>
+            <textarea name="description" className="form-textarea" required placeholder="What was purchased and why?" />
+          </label>
+          <div className="modal-footer full">
+            <button type="submit" className="btn btn-primary">
+              Submit claim
+            </button>
+          </div>
+        </form>
+      </article>
+      <article className="card">
+        <h2 className="card-title">Claim history</h2>
+        <RequestTable
+          headers={["Type", "Amount", "Date", "Description", "Status"]}
+          rows={reimbursements.map((claim) => [
+            claim.type,
+            claim.amount,
+            claim.date,
+            claim.description,
+            <Badge key={claim.id} tone={statusTone[claim.status] ?? "gray"}>
+              {claim.status}
+            </Badge>
+          ])}
+        />
+      </article>
+    </div>
+  );
+}
+
+export function AnnouncementsPanel({ announcements, onSubmitAnnouncement }) {
+  return (
+    <div className="two-col">
+      <article className="card">
+        <h2 className="card-title">Publish announcement</h2>
+        <form className="form-grid" onSubmit={onSubmitAnnouncement}>
+          <label className="form-group full">
+            <span className="form-label">Title</span>
+            <input name="title" className="form-input" placeholder="Announcement title" required />
+          </label>
+          <label className="form-group full">
+            <span className="form-label">Message</span>
+            <textarea name="message" className="form-textarea" placeholder="Write the announcement" required />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Audience</span>
+            <select name="audience" className="form-select" defaultValue="All staff">
+              <option>All staff</option>
+              <option>Operations</option>
+              <option>Human Resources</option>
+              <option>Finance</option>
+              <option>Procurement</option>
+            </select>
+          </label>
+          <div className="modal-footer full">
+            <button type="submit" className="btn btn-primary">
+              Publish
+            </button>
+          </div>
+        </form>
+      </article>
+      <article className="card">
+        <h2 className="card-title">Published announcements</h2>
+        {announcements.map((announcement) => (
+          <div key={announcement.id} className="announce-item">
+            <div className="announce-title">{announcement.title}</div>
+            <div className="announce-meta">
+              {announcement.owner} | {announcement.audience ?? "All staff"} | {announcement.date}
+            </div>
+            {announcement.message ? <p className="helper-text">{announcement.message}</p> : null}
+          </div>
+        ))}
+      </article>
+    </div>
+  );
+}
+
+export function EmployeeActivityPanel({ users, leaves, requests, reimbursements, advances }) {
+  const selectedUser = users[0] ?? { fullName: "No user", department: "-" };
+  const rows = [
+    ...requests.slice(0, 3).map((request) => [
+      request.date,
+      request.from,
+      "Item request",
+      `${request.item} x${request.qty}`,
+      request.status
+    ]),
+    ...leaves.slice(0, 3).map((leave) => [
+      leave.date,
+      leave.from,
+      "Leave",
+      `${leave.type}: ${leave.start} to ${leave.end}`,
+      leave.status
+    ]),
+    ...advances.slice(0, 2).map((advance) => [
+      "Apr 27",
+      advance.employee,
+      "Advance",
+      `${advance.amount} - ${advance.reason}`,
+      advance.status
+    ]),
+    ...reimbursements.slice(0, 2).map((claim) => [
+      claim.date,
+      claim.employee,
+      "Reimbursement",
+      `${claim.amount} - ${claim.description}`,
+      claim.status
+    ])
+  ];
+
+  return (
+    <div className="workspace-stack">
+      <article className="card">
+        <div className="form-grid">
+          <label className="form-group">
+            <span className="form-label">Employee</span>
+            <select className="form-select" defaultValue={selectedUser.fullName}>
+              {users.map((user) => (
+                <option key={user.email}>{user.fullName}</option>
+              ))}
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Module</span>
+            <select className="form-select" defaultValue="All activity">
+              <option>All activity</option>
+              <option>Leave</option>
+              <option>Requests</option>
+              <option>Attendance</option>
+              <option>Finance</option>
+            </select>
+          </label>
+        </div>
+      </article>
+      <article className="card">
+        <h2 className="card-title">Employee activity log</h2>
+        <RequestTable
+          headers={["Date", "Employee", "Module", "Details", "Status"]}
+          rows={rows.map((row, index) => [
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            <Badge key={index} tone={statusTone[row[4]] ?? "gray"}>
+              {row[4]}
+            </Badge>
+          ])}
+        />
+      </article>
+    </div>
+  );
+}
+
+export function UserManagementPanel({ users, onSubmitUser, onToggleUserStatus }) {
+  return (
+    <div className="workspace-stack">
+      <article className="card">
+        <h2 className="card-title">Create user account</h2>
+        <form className="form-grid" onSubmit={onSubmitUser}>
+          <label className="form-group">
+            <span className="form-label">Full name</span>
+            <input name="fullName" className="form-input" required />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Email</span>
+            <input name="email" className="form-input" type="email" required />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Role</span>
+            <select name="role" className="form-select" defaultValue="EMPLOYEE">
+              <option value="EMPLOYEE">Employee</option>
+              <option value="LINE_MANAGER">Line Manager</option>
+              <option value="HR_OFFICER">HR Officer</option>
+              <option value="FINANCE">Finance</option>
+              <option value="INVENTORY_OFFICER">Inventory Officer</option>
+              <option value="PROCUREMENT_OFFICER">Procurement Officer</option>
+              <option value="SUPER_ADMIN">Super Admin</option>
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Department</span>
+            <input name="department" className="form-input" defaultValue="Operations" required />
+          </label>
+          <div className="modal-footer full">
+            <button type="submit" className="btn btn-primary">
+              Create user
+            </button>
+          </div>
+        </form>
+      </article>
+      <article className="card">
+        <h2 className="card-title">User management</h2>
+        <RequestTable
+          headers={["Name", "Email", "Role", "Department", "Status", "Action"]}
+          rows={users.map((user) => [
+            user.fullName,
+            user.email,
+            user.role.replaceAll("_", " "),
+            user.department,
+            <Badge key={`${user.email}-status`} tone={statusTone[user.status] ?? "gray"}>
+              {user.status}
+            </Badge>,
+            <button
+              key={`${user.email}-action`}
+              type="button"
+              className={user.status === "active" ? "btn btn-danger btn-sm" : "btn btn-success btn-sm"}
+              onClick={() => onToggleUserStatus(user.email)}
+            >
+              {user.status === "active" ? "Deactivate" : "Reactivate"}
+            </button>
+          ])}
+        />
+      </article>
+    </div>
+  );
+}
+
+export function AllRequestsPanel({ requests, leaves, advances, reimbursements }) {
+  const rows = [
+    ...requests.map((request) => ["Item", request.from, `${request.item} x${request.qty}`, "Inventory", request.status]),
+    ...leaves.map((leave) => ["Leave", leave.from, `${leave.type}: ${leave.start} to ${leave.end}`, "HR", leave.status]),
+    ...advances.map((advance) => ["Advance", advance.employee, advance.amount, "Finance", advance.status]),
+    ...reimbursements.map((claim) => ["Reimbursement", claim.employee, claim.amount, "Finance", claim.status])
+  ];
+
+  return (
+    <article className="card">
+      <h2 className="card-title">All requests - system wide</h2>
+      <RequestTable
+        headers={["Type", "From", "Details", "Current stage", "Status"]}
+        rows={rows.map((row, index) => [
+          row[0],
+          row[1],
+          row[2],
+          row[3],
+          <Badge key={index} tone={statusTone[row[4]] ?? "gray"}>
+            {row[4]}
+          </Badge>
+        ])}
+      />
+    </article>
+  );
+}
+
+export function PaymentHistoryPanel({ payments }) {
+  return (
+    <article className="card">
+      <h2 className="card-title">Payment history</h2>
+      <RequestTable
+        headers={["Date", "Category", "Reference", "Payee", "Amount", "Status"]}
+        rows={payments.map((payment) => [
+          payment.date,
+          payment.category,
+          payment.reference,
+          payment.payee,
+          payment.amount,
+          <Badge key={payment.id} tone={statusTone[payment.status] ?? "gray"}>
+            {payment.status}
+          </Badge>
+        ])}
+      />
+    </article>
+  );
+}
+
+export function NotificationHistoryPanel({ notifications, onMarkRead }) {
+  return (
+    <article className="card">
+      <div className="card-header">
+        <h2 className="card-title">Notification history</h2>
+        <Badge tone={notifications.some((item) => item.status === "unread") ? "blue" : "green"}>
+          {notifications.filter((item) => item.status === "unread").length} unread
+        </Badge>
+      </div>
+      <div className="compact-stack">
+        {notifications.map((notification) => (
+          <div key={notification.id} className="notification-card">
+            <div className="requisition-list-top">
+              <strong>{notification.subject}</strong>
+              <Badge tone={notification.status === "unread" ? "blue" : "green"}>
+                {notification.status}
+              </Badge>
+            </div>
+            <p>{notification.message}</p>
+            <small>{notification.time} | {notification.route}</small>
+            {notification.status === "unread" ? (
+              <div className="decision-actions">
+                <button
+                  type="button"
+                  className="btn btn-success btn-sm"
+                  onClick={() => onMarkRead(notification.id)}
+                >
+                  Mark read
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+export function PermissionsPanel({ permissions }) {
+  return (
+    <article className="card">
+      <h2 className="card-title">Role and permission management</h2>
+      <RequestTable
+        headers={["Role", "Dashboard", "Approvals", "Finance", "Inventory", "Admin"]}
+        rows={permissions.map((permission) => [
+          permission.role,
+          permission.dashboard ? <Badge key={`${permission.role}-dash`} tone="green">Yes</Badge> : "-",
+          permission.approvals ? <Badge key={`${permission.role}-app`} tone="green">Yes</Badge> : "-",
+          permission.finance ? <Badge key={`${permission.role}-fin`} tone="green">Yes</Badge> : "-",
+          permission.inventory ? <Badge key={`${permission.role}-inv`} tone="green">Yes</Badge> : "-",
+          permission.admin ? <Badge key={`${permission.role}-adm`} tone="green">Yes</Badge> : "-"
+        ])}
+      />
+    </article>
+  );
+}
+
+export function AdminOverviewPanel({ demo, onNavigate }) {
+  const lowStock = demo.stock.filter((item) => item.qty <= item.min).length;
+  const pendingRequests =
+    demo.requests.filter((request) => request.status === "pending").length +
+    demo.leaves.filter((leave) => ["pending", "pending HR"].includes(leave.status)).length +
+    demo.advances.filter((advance) => advance.status === "pending").length +
+    demo.reimbursements.filter((claim) => claim.status === "pending").length;
+
+  return (
+    <div className="workspace-stack">
+      <div className="stats-grid">
+        <div className="stat-card green">
+          <div className="stat-label">Active users</div>
+          <div className="stat-val">{demo.users.length}</div>
+          <div className="stat-sub">all roles</div>
+        </div>
+        <div className="stat-card amber">
+          <div className="stat-label">Pending requests</div>
+          <div className="stat-val">{pendingRequests}</div>
+          <div className="stat-sub">all modules</div>
+        </div>
+        <div className="stat-card red">
+          <div className="stat-label">Low stock</div>
+          <div className="stat-val">{lowStock}</div>
+          <div className="stat-sub">auto procurement triggers</div>
+        </div>
+        <div className="stat-card blue">
+          <div className="stat-label">Audit events</div>
+          <div className="stat-val">{demo.auditLogs.length}</div>
+          <div className="stat-sub">visible to admin</div>
+        </div>
+      </div>
+      <div className="two-col">
+        <article className="card">
+          <h2 className="card-title">Read-only module access</h2>
+          <div className="button-row table-actions">
+            <button type="button" className="btn btn-ghost" onClick={() => onNavigate("all-requests")}>Requests</button>
+            <button type="button" className="btn btn-ghost" onClick={() => onNavigate("stock")}>Inventory</button>
+            <button type="button" className="btn btn-ghost" onClick={() => onNavigate("finance-payments")}>Finance</button>
+            <button type="button" className="btn btn-ghost" onClick={() => onNavigate("audit")}>Audit</button>
+          </div>
+        </article>
+        <article className="card">
+          <h2 className="card-title">System alerts</h2>
+          {demo.stock
+            .filter((item) => item.qty <= item.min)
+            .map((item) => (
+              <div key={item.id} className="announce-item">
+                <div className="announce-title">{item.name} is below minimum stock</div>
+                <div className="announce-meta">
+                  {item.qty} {item.unit} on hand | minimum {item.min}
+                </div>
+              </div>
+            ))}
+        </article>
+      </div>
+    </div>
   );
 }
 

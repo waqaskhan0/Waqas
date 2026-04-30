@@ -6,6 +6,16 @@ dotenv.config();
 
 const defaultPassword = process.env.SEED_DEFAULT_PASSWORD ?? "Password123!";
 
+const roles = [
+  ["EMPLOYEE", "Employee"],
+  ["LINE_MANAGER", "Line Manager"],
+  ["INVENTORY_OFFICER", "Inventory Officer"],
+  ["PROCUREMENT_OFFICER", "Procurement Officer"],
+  ["FINANCE", "Finance"],
+  ["HR_OFFICER", "HR Officer"],
+  ["SUPER_ADMIN", "Super Admin"]
+];
+
 const users = [
   {
     employeeCode: "LM-001",
@@ -46,8 +56,37 @@ const users = [
     roleCode: "FINANCE",
     department: "Finance",
     managerEmail: null
+  },
+  {
+    employeeCode: "HR-001",
+    fullName: "Nadia HR",
+    email: "hr@ims.local",
+    roleCode: "HR_OFFICER",
+    department: "Human Resources",
+    managerEmail: null
+  },
+  {
+    employeeCode: "ADM-001",
+    fullName: "Super Admin",
+    email: "admin@ims.local",
+    roleCode: "SUPER_ADMIN",
+    department: "IT / Management",
+    managerEmail: null
   }
 ];
+
+async function upsertRoles() {
+  for (const [code, label] of roles) {
+    await query(
+      `
+        INSERT INTO roles (code, label)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE label = VALUES(label)
+      `,
+      [code, label]
+    );
+  }
+}
 
 async function upsertUser(user, passwordHash) {
   const managerId =
@@ -91,6 +130,8 @@ async function upsertUser(user, passwordHash) {
 
 async function main() {
   const passwordHash = await bcrypt.hash(defaultPassword, 10);
+
+  await upsertRoles();
 
   for (const user of users) {
     await upsertUser(user, passwordHash);

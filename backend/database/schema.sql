@@ -8,7 +8,9 @@ INSERT INTO roles (code, label) VALUES
   ('LINE_MANAGER', 'Line Manager'),
   ('INVENTORY_OFFICER', 'Inventory Officer'),
   ('PROCUREMENT_OFFICER', 'Procurement Officer'),
-  ('FINANCE', 'Finance');
+  ('FINANCE', 'Finance'),
+  ('HR_OFFICER', 'HR Officer'),
+  ('SUPER_ADMIN', 'Super Admin');
 
 CREATE TABLE users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

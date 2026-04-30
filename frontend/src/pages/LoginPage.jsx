@@ -34,6 +34,18 @@ const demoAccounts = [
     label: "Finance",
     name: "Sara Finance",
     email: "finance@ims.local"
+  },
+  {
+    role: "HR_OFFICER",
+    label: "HR Officer",
+    name: "Nadia HR",
+    email: "hr@ims.local"
+  },
+  {
+    role: "SUPER_ADMIN",
+    label: "Super Admin",
+    name: "Super Admin",
+    email: "admin@ims.local"
   }
 ];
 
