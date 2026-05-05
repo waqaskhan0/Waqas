@@ -4,15 +4,47 @@ import { getRequisitionByIdForUser } from "../requisitions/requisitions.service.
 import { ApiError } from "../../utils/apiError.js";
 
 function mapStockItem(row) {
+  const metadata = parsePipeMetadata(row.specification);
+
   return {
     id: row.id,
     sku: row.sku,
     itemName: row.item_name,
     specification: row.specification,
+    itemId: metadata["item id"] || row.sku,
+    itemType: metadata.type || row.specification || "Not specified",
+    itemCategory: metadata.category || inferInventoryCategory(row),
+    defaultLocation: metadata.location || metadata["default storage location"] || "Main store",
     unit: row.unit,
     quantityOnHand: Number(row.quantity_on_hand),
-    reorderLevel: Number(row.reorder_level)
+    reservedQuantity: Number(row.reserved_quantity ?? 0),
+    availableQuantity: Math.max(
+      0,
+      Number((Number(row.quantity_on_hand) - Number(row.reserved_quantity ?? 0)).toFixed(2))
+    ),
+    reorderLevel: Number(row.reorder_level),
+    isDiscontinued: metadata.status?.toLowerCase() === "discontinued",
+    linkedRequests: row.linked_requests ?? [],
+    linkedPurchaseOrders: row.linked_purchase_orders ?? []
   };
+}
+
+function inferInventoryCategory(row) {
+  const text = `${row.sku ?? ""} ${row.item_name ?? ""} ${row.specification ?? ""}`.toLowerCase();
+
+  if (text.includes("progressive")) {
+    return "PROGRESSIVE";
+  }
+
+  if (text.includes("stationary") || text.includes("stationery")) {
+    return "Stationary";
+  }
+
+  if (text.includes("rwhu")) {
+    return "RWHU";
+  }
+
+  return "RWHU";
 }
 
 function mapInventoryQueueItem(row) {
@@ -33,8 +65,116 @@ function mapInventoryQueueItem(row) {
   };
 }
 
+function mapDashboardRequest(row) {
+  return {
+    id: row.id,
+    requisitionNumber: row.requisition_number,
+    title: row.title,
+    department: row.requester_department,
+    requestedBy: row.requester_name,
+    submittedAt: row.submitted_at,
+    approvalStatus: row.approval_status,
+    issuanceStatus: row.issuance_status
+  };
+}
+
+function mapProcurementAlert(row) {
+  return {
+    id: row.id,
+    requisitionNumber: row.requisition_number,
+    title: row.title,
+    department: row.requester_department,
+    quantityForProcurement: Number(row.quantity_for_procurement ?? 0),
+    processedAt: row.processed_at,
+    status: row.status
+  };
+}
+
+function mapDashboardActivity(row) {
+  return {
+    id: `${row.activity_type}-${row.reference_id}`,
+    type: row.activity_type,
+    title: row.title,
+    reference: row.reference,
+    actor: row.actor_name,
+    occurredAt: row.occurred_at
+  };
+}
+
+function parsePipeMetadata(value) {
+  return String(value ?? "")
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((metadata, part) => {
+      const separatorIndex = part.indexOf(":");
+
+      if (separatorIndex === -1) {
+        return metadata;
+      }
+
+      const key = part.slice(0, separatorIndex).trim().toLowerCase();
+      const parsedValue = part.slice(separatorIndex + 1).trim();
+
+      return {
+        ...metadata,
+        [key]: parsedValue
+      };
+    }, {});
+}
+
+function mapInventoryRequest(row) {
+  const requestMetadata = parsePipeMetadata(row.justification);
+  const itemMetadata = parsePipeMetadata(row.specification);
+
+  return {
+    id: `${row.id}-${row.item_id}`,
+    requisitionId: row.id,
+    requisitionItemId: row.item_id,
+    requestId: row.requisition_number,
+    requestDate: requestMetadata["request date"] || row.submitted_at,
+    submittedAt: row.submitted_at,
+    department: requestMetadata.department || row.requester_department,
+    location: requestMetadata.location || "Not provided",
+    requestedBy: row.requester_name,
+    requesterEmail: row.requester_email,
+    requesterEmployeeCode: row.requester_employee_code,
+    itemId: itemMetadata["item id"] || `Line ${row.line_number}`,
+    itemName: row.item_description,
+    itemType: itemMetadata.type || itemMetadata.category || "Not specified",
+    itemCategory: itemMetadata.category || "Not specified",
+    itemSpecification: row.specification,
+    quantityRequested: Number(row.quantity_requested ?? 0),
+    unit: row.unit,
+    manager: {
+      fullName: row.manager_name,
+      email: row.manager_email
+    },
+    approvalStatus: row.approval_status,
+    issuanceStatus: row.issuance_status,
+    notes: itemMetadata.notes || row.justification,
+    decisionRemarks: row.decision_remarks,
+    inventoryRemarks: row.inventory_remarks,
+    approvedAt: row.approved_at,
+    rejectedAt: row.rejected_at,
+    fulfilledAt: row.fulfilled_at,
+    issuedQuantity: Number(row.quantity_issued ?? 0),
+    procurementQuantity: Number(row.quantity_for_procurement ?? 0),
+    stockItem: row.stock_item_id
+      ? {
+          id: row.stock_item_id,
+          sku: row.stock_sku,
+          itemName: row.stock_item_name,
+          quantityOnHand: Number(row.stock_quantity_on_hand ?? 0),
+          unit: row.stock_unit
+        }
+      : null
+  };
+}
+
 export async function listInventoryStock() {
-  const rows = await query(
+  const [stockRows, requestRows, purchaseOrderRows] = await Promise.all([
+    query(
     `
       SELECT
         id,
@@ -47,9 +187,163 @@ export async function listInventoryStock() {
       FROM inventory_stock
       ORDER BY item_name ASC, specification ASC
     `
+    ),
+    query(
+      `
+        SELECT
+          r.id AS requisition_id,
+          r.requisition_number,
+          r.status,
+          r.approved_at,
+          ri.id AS requisition_item_id,
+          ri.item_description,
+          ri.specification,
+          ri.quantity_requested,
+          ia.stock_item_id,
+          ia.quantity_issued
+        FROM requisitions r
+        INNER JOIN requisition_items ri ON ri.requisition_id = r.id
+        LEFT JOIN inventory_allocations ia ON ia.requisition_item_id = ri.id
+        WHERE r.status IN ('APPROVED', 'PROCUREMENT_PENDING', 'PARTIALLY_FULFILLED', 'FULFILLED')
+        ORDER BY r.approved_at DESC, r.id DESC
+      `
+    ),
+    query(
+      `
+        SELECT
+          po.id AS purchase_order_id,
+          po.po_number,
+          po.status,
+          po.order_date,
+          pol.requisition_item_id,
+          pol.item_description,
+          pol.specification,
+          pol.quantity_ordered,
+          ia.stock_item_id
+        FROM purchase_orders po
+        INNER JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
+        LEFT JOIN inventory_allocations ia ON ia.id = pol.inventory_allocation_id
+        ORDER BY po.order_date DESC, po.id DESC
+      `
+    )
+  ]);
+
+  const stockById = new Map(stockRows.map((row) => [row.id, row]));
+  const stockBySku = new Map(stockRows.map((row) => [String(row.sku).toLowerCase(), row]));
+
+  for (const row of stockRows) {
+    row.reserved_quantity = 0;
+    row.linked_requests = [];
+    row.linked_purchase_orders = [];
+  }
+
+  for (const request of requestRows) {
+    const metadata = parsePipeMetadata(request.specification);
+    const itemId = String(metadata["item id"] ?? "").toLowerCase();
+    const stockRow = request.stock_item_id
+      ? stockById.get(request.stock_item_id)
+      : stockBySku.get(itemId);
+
+    if (!stockRow) {
+      continue;
+    }
+
+    stockRow.linked_requests.push({
+      id: request.requisition_id,
+      requisitionItemId: request.requisition_item_id,
+      requestId: request.requisition_number,
+      status: request.status,
+      quantity: Number(request.quantity_requested ?? 0)
+    });
+
+    if (request.status === "APPROVED" && Number(request.quantity_issued ?? 0) === 0) {
+      stockRow.reserved_quantity = Number(
+        (Number(stockRow.reserved_quantity ?? 0) + Number(request.quantity_requested ?? 0)).toFixed(2)
+      );
+    }
+  }
+
+  for (const purchaseOrder of purchaseOrderRows) {
+    const metadata = parsePipeMetadata(purchaseOrder.specification);
+    const itemId = String(metadata["item id"] ?? "").toLowerCase();
+    const stockRow = purchaseOrder.stock_item_id
+      ? stockById.get(purchaseOrder.stock_item_id)
+      : stockBySku.get(itemId);
+
+    if (!stockRow) {
+      continue;
+    }
+
+    stockRow.linked_purchase_orders.push({
+      id: purchaseOrder.purchase_order_id,
+      poNumber: purchaseOrder.po_number,
+      status: purchaseOrder.status,
+      quantity: Number(purchaseOrder.quantity_ordered ?? 0)
+    });
+  }
+
+  return stockRows.map(mapStockItem);
+}
+
+export async function createStockItem(payload) {
+  const existingRows = await query(
+    `
+      SELECT id
+      FROM inventory_stock
+      WHERE LOWER(sku) = LOWER(?)
+      LIMIT 1
+    `,
+    [payload.itemId]
   );
 
-  return rows.map(mapStockItem);
+  if (existingRows.length) {
+    throw new ApiError(409, "An item with this Item ID already exists.");
+  }
+
+  const specification = [
+    `Item ID: ${payload.itemId}`,
+    `Type: ${payload.itemType}`,
+    `Category: ${payload.itemCategory}`,
+    `Location: ${payload.defaultLocation}`
+  ].join(" | ");
+
+  const result = await query(
+    `
+      INSERT INTO inventory_stock (
+        sku,
+        item_name,
+        specification,
+        unit,
+        quantity_on_hand,
+        reorder_level
+      )
+      VALUES (?, ?, ?, 'unit', 0, 10)
+    `,
+    [payload.itemId, payload.itemName, specification]
+  );
+
+  const rows = await query(
+    `
+      SELECT
+        id,
+        sku,
+        item_name,
+        specification,
+        unit,
+        quantity_on_hand,
+        reorder_level
+      FROM inventory_stock
+      WHERE id = ?
+    `,
+    [result.insertId]
+  );
+
+  return mapStockItem({
+    ...rows[0],
+    reserved_quantity: 0,
+    linked_requests: [],
+    linked_purchase_orders: []
+  });
 }
 
 export async function listInventoryQueue() {
@@ -95,6 +389,265 @@ export async function listInventoryQueue() {
   );
 
   return rows.map(mapInventoryQueueItem);
+}
+
+export async function listInventoryRequests() {
+  const rows = await query(
+    `
+      SELECT
+        r.id,
+        r.requisition_number,
+        r.title,
+        r.justification,
+        r.status,
+        r.submitted_at,
+        r.approved_at,
+        r.rejected_at,
+        r.fulfilled_at,
+        requester.full_name AS requester_name,
+        requester.email AS requester_email,
+        requester.department AS requester_department,
+        requester.employee_code AS requester_employee_code,
+        manager.full_name AS manager_name,
+        manager.email AS manager_email,
+        ri.id AS item_id,
+        ri.line_number,
+        ri.item_description,
+        ri.specification,
+        ri.quantity_requested,
+        ri.unit,
+        ia.quantity_issued,
+        ia.quantity_for_procurement,
+        ia.remarks AS inventory_remarks,
+        stock.id AS stock_item_id,
+        stock.sku AS stock_sku,
+        stock.item_name AS stock_item_name,
+        stock.quantity_on_hand AS stock_quantity_on_hand,
+        stock.unit AS stock_unit,
+        (
+          SELECT l.remarks
+          FROM approval_logs l
+          WHERE l.requisition_id = r.id
+            AND l.action IN ('APPROVED', 'REJECTED')
+          ORDER BY l.created_at DESC, l.id DESC
+          LIMIT 1
+        ) AS decision_remarks,
+        CASE
+          WHEN r.status = 'SUBMITTED' THEN 'Pending manager approval'
+          WHEN r.status = 'REJECTED' THEN 'Rejected'
+          ELSE 'Approved'
+        END AS approval_status,
+        CASE
+          WHEN r.status = 'FULFILLED' THEN 'Issued'
+          WHEN r.status = 'PARTIALLY_FULFILLED' THEN 'Partially issued'
+          WHEN r.status = 'PROCUREMENT_PENDING' THEN 'Sent to procurement'
+          WHEN r.status = 'APPROVED' THEN 'Awaiting inventory'
+          WHEN r.status = 'REJECTED' THEN 'Not issued'
+          ELSE 'Not issued'
+        END AS issuance_status
+      FROM requisitions r
+      INNER JOIN users requester ON requester.id = r.requested_by_user_id
+      INNER JOIN users manager ON manager.id = r.manager_id
+      INNER JOIN requisition_items ri ON ri.requisition_id = r.id
+      LEFT JOIN inventory_allocations ia ON ia.requisition_item_id = ri.id
+      LEFT JOIN inventory_stock stock ON stock.id = ia.stock_item_id
+      ORDER BY r.submitted_at DESC, r.id DESC, ri.line_number ASC
+    `
+  );
+
+  return rows.map(mapInventoryRequest);
+}
+
+export async function getInventoryDashboard() {
+  const [requestStatsRows, stockStatsRows, recentRequestRows, pendingApprovalRows, procurementAlertRows, activityRows] =
+    await Promise.all([
+      query(
+        `
+          SELECT
+            COUNT(*) AS total_requests,
+            SUM(CASE WHEN status = 'SUBMITTED' THEN 1 ELSE 0 END) AS pending_approvals,
+            SUM(CASE WHEN status IN ('APPROVED', 'PROCUREMENT_PENDING', 'PARTIALLY_FULFILLED', 'FULFILLED') THEN 1 ELSE 0 END) AS approved_requests,
+            SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_requests
+          FROM requisitions
+        `
+      ),
+      query(
+        `
+          SELECT
+            SUM(CASE WHEN quantity_on_hand > 0 AND quantity_on_hand <= reorder_level THEN 1 ELSE 0 END) AS low_stock_items,
+            SUM(CASE WHEN quantity_on_hand <= 0 THEN 1 ELSE 0 END) AS out_of_stock_items
+          FROM inventory_stock
+        `
+      ),
+      query(
+        `
+          SELECT
+            r.id,
+            r.requisition_number,
+            r.title,
+            r.status,
+            r.submitted_at,
+            requester.full_name AS requester_name,
+            requester.department AS requester_department,
+            CASE
+              WHEN r.status = 'SUBMITTED' THEN 'Pending manager approval'
+              WHEN r.status = 'APPROVED' THEN 'Approved'
+              WHEN r.status IN ('PROCUREMENT_PENDING', 'PARTIALLY_FULFILLED', 'FULFILLED') THEN 'Approved'
+              WHEN r.status = 'REJECTED' THEN 'Rejected'
+              ELSE r.status
+            END AS approval_status,
+            CASE
+              WHEN r.status = 'FULFILLED' THEN 'Issued'
+              WHEN r.status = 'PARTIALLY_FULFILLED' THEN 'Partially issued'
+              WHEN r.status = 'PROCUREMENT_PENDING' THEN 'Sent to procurement'
+              WHEN r.status = 'APPROVED' THEN 'Awaiting inventory'
+              ELSE 'Not issued'
+            END AS issuance_status
+          FROM requisitions r
+          INNER JOIN users requester ON requester.id = r.requested_by_user_id
+          ORDER BY r.submitted_at DESC, r.id DESC
+          LIMIT 8
+        `
+      ),
+      query(
+        `
+          SELECT
+            r.id,
+            r.requisition_number,
+            r.title,
+            r.status,
+            r.submitted_at,
+            requester.full_name AS requester_name,
+            requester.department AS requester_department,
+            'Pending manager approval' AS approval_status,
+            'Not issued' AS issuance_status
+          FROM requisitions r
+          INNER JOIN users requester ON requester.id = r.requested_by_user_id
+          WHERE r.status = 'SUBMITTED'
+          ORDER BY r.submitted_at ASC, r.id ASC
+          LIMIT 8
+        `
+      ),
+      query(
+        `
+          SELECT
+            r.id,
+            r.requisition_number,
+            r.title,
+            r.status,
+            requester.department AS requester_department,
+            SUM(ia.quantity_for_procurement) AS quantity_for_procurement,
+            MAX(ia.processed_at) AS processed_at
+          FROM requisitions r
+          INNER JOIN users requester ON requester.id = r.requested_by_user_id
+          INNER JOIN requisition_items ri ON ri.requisition_id = r.id
+          INNER JOIN inventory_allocations ia ON ia.requisition_item_id = ri.id
+          LEFT JOIN purchase_orders po ON po.requisition_id = r.id
+          WHERE ia.quantity_for_procurement > 0
+            AND po.id IS NULL
+          GROUP BY
+            r.id,
+            r.requisition_number,
+            r.title,
+            r.status,
+            requester.department
+          ORDER BY processed_at DESC, r.id DESC
+          LIMIT 8
+        `
+      ),
+      query(
+        `
+          SELECT *
+          FROM (
+            SELECT
+              'request_submitted' AS activity_type,
+              r.id AS reference_id,
+              CONCAT('Request submitted by ', requester.full_name) AS title,
+              r.requisition_number AS reference,
+              requester.full_name AS actor_name,
+              r.submitted_at AS occurred_at
+            FROM requisitions r
+            INNER JOIN users requester ON requester.id = r.requested_by_user_id
+
+            UNION ALL
+
+            SELECT
+              'request_approved' AS activity_type,
+              r.id AS reference_id,
+              CONCAT('Request approved for ', requester.department) AS title,
+              r.requisition_number AS reference,
+              manager.full_name AS actor_name,
+              r.approved_at AS occurred_at
+            FROM requisitions r
+            INNER JOIN users requester ON requester.id = r.requested_by_user_id
+            INNER JOIN users manager ON manager.id = r.manager_id
+            WHERE r.approved_at IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+              'item_issued' AS activity_type,
+              it.id AS reference_id,
+              CONCAT('Issued ', it.quantity, ' ', stock.unit, ' of ', stock.item_name) AS title,
+              r.requisition_number AS reference,
+              actor.full_name AS actor_name,
+              it.created_at AS occurred_at
+            FROM inventory_transactions it
+            INNER JOIN inventory_stock stock ON stock.id = it.stock_item_id
+            LEFT JOIN requisitions r ON r.id = it.requisition_id
+            INNER JOIN users actor ON actor.id = it.actor_user_id
+            WHERE it.transaction_type = 'ISSUE'
+
+            UNION ALL
+
+            SELECT
+              'grn_received' AS activity_type,
+              gr.id AS reference_id,
+              CONCAT('GRN received for ', po.po_number) AS title,
+              gr.grn_number AS reference,
+              receiver.full_name AS actor_name,
+              gr.received_at AS occurred_at
+            FROM goods_receipts gr
+            INNER JOIN purchase_orders po ON po.id = gr.purchase_order_id
+            INNER JOIN users receiver ON receiver.id = gr.received_by_user_id
+
+            UNION ALL
+
+            SELECT
+              'po_created' AS activity_type,
+              po.id AS reference_id,
+              CONCAT('Purchase order created for ', vendor.vendor_name) AS title,
+              po.po_number AS reference,
+              creator.full_name AS actor_name,
+              po.order_date AS occurred_at
+            FROM purchase_orders po
+            INNER JOIN vendors vendor ON vendor.id = po.vendor_id
+            INNER JOIN users creator ON creator.id = po.created_by_user_id
+          ) activity
+          WHERE occurred_at IS NOT NULL
+          ORDER BY occurred_at DESC
+          LIMIT 10
+        `
+      )
+    ]);
+
+  const requestStats = requestStatsRows[0] ?? {};
+  const stockStats = stockStatsRows[0] ?? {};
+
+  return {
+    summary: {
+      totalRequests: Number(requestStats.total_requests ?? 0),
+      pendingApprovals: Number(requestStats.pending_approvals ?? 0),
+      approvedRequests: Number(requestStats.approved_requests ?? 0),
+      rejectedRequests: Number(requestStats.rejected_requests ?? 0),
+      lowStockItems: Number(stockStats.low_stock_items ?? 0),
+      outOfStockItems: Number(stockStats.out_of_stock_items ?? 0)
+    },
+    recentRequests: recentRequestRows.map(mapDashboardRequest),
+    pendingApprovals: pendingApprovalRows.map(mapDashboardRequest),
+    procurementAlerts: procurementAlertRows.map(mapProcurementAlert),
+    recentActivity: activityRows.map(mapDashboardActivity)
+  };
 }
 
 async function getApprovedRequisitionForProcessing(connection, requisitionId) {

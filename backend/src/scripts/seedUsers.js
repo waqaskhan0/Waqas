@@ -137,8 +137,8 @@ async function main() {
     await upsertUser(user, passwordHash);
   }
 
-  console.log("Demo users are seeded.");
-  console.log(`Default password: ${defaultPassword}`);
+  console.log("Starter user accounts are seeded.");
+  console.log(`Configured password: ${defaultPassword}`);
 }
 
 main().catch((error) => {

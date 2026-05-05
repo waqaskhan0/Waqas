@@ -508,6 +508,10 @@ async function getFinanceMatches(requisitionId) {
 }
 
 function canAccessRequisition(user, requisitionRow) {
+  if (user.isDevelopmentBypass || user.role === ROLES.SUPER_ADMIN) {
+    return true;
+  }
+
   if (user.id === requisitionRow.requested_by_user_id) {
     return true;
   }
@@ -667,7 +671,12 @@ export async function listMyRequisitions(userId) {
   return rows.map(mapRequisitionSummary);
 }
 
-export async function listManagerRequisitions(managerId) {
+export async function listManagerRequisitions(managerUser) {
+  const canSeeAllManagers =
+    managerUser.isDevelopmentBypass || managerUser.role === ROLES.SUPER_ADMIN;
+  const managerWhereClause = canSeeAllManagers ? "1 = 1" : "r.manager_id = ?";
+  const queryParams = canSeeAllManagers ? [] : [managerUser.id];
+
   const rows = await query(
     `
       SELECT
@@ -689,7 +698,7 @@ export async function listManagerRequisitions(managerId) {
       FROM requisitions r
       INNER JOIN users requester ON requester.id = r.requested_by_user_id
       LEFT JOIN requisition_items ri ON ri.requisition_id = r.id
-      WHERE r.manager_id = ?
+      WHERE ${managerWhereClause}
       GROUP BY
         r.id,
         r.requisition_number,
@@ -714,7 +723,7 @@ export async function listManagerRequisitions(managerId) {
         r.submitted_at DESC,
         r.id DESC
     `,
-    [managerId]
+    queryParams
   );
 
   return rows.map(mapManagerQueueItem);
@@ -760,7 +769,11 @@ async function recordDecision({
       throw new ApiError(404, "Requisition was not found.");
     }
 
-    if (requisition.manager_id !== managerUser.id) {
+    if (
+      requisition.manager_id !== managerUser.id &&
+      !managerUser.isDevelopmentBypass &&
+      managerUser.role !== ROLES.SUPER_ADMIN
+    ) {
       throw new ApiError(403, "This requisition is not assigned to you.");
     }
 

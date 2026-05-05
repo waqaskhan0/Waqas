@@ -1,3 +1,6 @@
+import { useMemo, useState } from "react";
+import { apiClient } from "../api/client.js";
+
 const statusTone = {
   pending: "amber",
   "pending manager": "amber",
@@ -17,46 +20,46 @@ const statusTone = {
 
 const roleDashboardStats = {
   EMPLOYEE: [
-    ["Attendance this month", "18", "days present", "blue"],
-    ["Pending requests", "2", "item and leave", "amber"],
-    ["Tasks done", "7", "this week", "green"],
-    ["Leave balance", "12", "days remaining", "purple"]
+    ["Attendance this month", "0", "live records only", "blue"],
+    ["Pending requests", "0", "live records only", "amber"],
+    ["Tasks done", "0", "live records only", "green"],
+    ["Leave balance", "0", "live records only", "purple"]
   ],
   LINE_MANAGER: [
-    ["Pending approvals", "4", "needs your action", "amber"],
-    ["Team size", "8", "direct reports", "blue"],
-    ["Present today", "7", "1 on leave", "green"],
-    ["Overdue tasks", "2", "team work plan", "red"]
+    ["Pending approvals", "0", "live records only", "amber"],
+    ["Team size", "0", "live records only", "blue"],
+    ["Present today", "0", "live records only", "green"],
+    ["Overdue tasks", "0", "live records only", "red"]
   ],
   INVENTORY_OFFICER: [
-    ["Items in stock", "6", "active SKUs", "blue"],
-    ["Low stock", "2", "needs reorder", "red"],
-    ["Pending issues", "2", "approved requests", "amber"],
-    ["Issued today", "14", "units", "green"]
+    ["Items in stock", "0", "live records only", "blue"],
+    ["Low stock", "0", "live records only", "red"],
+    ["Pending issues", "0", "live records only", "amber"],
+    ["Issued today", "0", "live records only", "green"]
   ],
   PROCUREMENT_OFFICER: [
-    ["Open procurement", "3", "balances waiting", "amber"],
-    ["Active vendors", "5", "approved sources", "green"],
-    ["POs this month", "12", "issued", "blue"],
-    ["Due deliveries", "2", "next 7 days", "red"]
+    ["Open procurement", "0", "live records only", "amber"],
+    ["Active vendors", "0", "live records only", "green"],
+    ["POs this month", "0", "live records only", "blue"],
+    ["Due deliveries", "0", "live records only", "red"]
   ],
   FINANCE: [
-    ["POs to match", "3", "ready for finance", "amber"],
-    ["Payments pending", "2", "vendor releases", "red"],
-    ["Payroll", "370K", "April processed", "green"],
-    ["Reimbursements", "2", "awaiting review", "blue"]
+    ["POs to match", "0", "live records only", "amber"],
+    ["Payments pending", "0", "live records only", "red"],
+    ["Payroll", "0", "live records only", "green"],
+    ["Reimbursements", "0", "live records only", "blue"]
   ],
   HR_OFFICER: [
-    ["Leave approvals", "3", "pending final action", "amber"],
-    ["Present today", "42", "out of 50 staff", "green"],
-    ["On leave", "3", "approved today", "blue"],
-    ["New joiners", "2", "this month", "purple"]
+    ["Leave approvals", "0", "live records only", "amber"],
+    ["Present today", "0", "live records only", "green"],
+    ["On leave", "0", "live records only", "blue"],
+    ["New joiners", "0", "live records only", "purple"]
   ],
   SUPER_ADMIN: [
-    ["Active users", "7", "role accounts", "green"],
-    ["Pending requests", "9", "across modules", "amber"],
-    ["Low stock", "2", "auto-forwarded", "red"],
-    ["Audit events", "128", "today", "blue"]
+    ["Active users", "0", "live records only", "green"],
+    ["Pending requests", "0", "live records only", "amber"],
+    ["Low stock", "0", "live records only", "red"],
+    ["Audit events", "0", "live records only", "blue"]
   ]
 };
 
@@ -147,14 +150,19 @@ export function OverviewPanel({ role, demo, onNavigate, onOpenModal }) {
               </button>
             )}
           </div>
-          {demo.announcements.map((announcement) => (
+          {demo.announcements.length ? demo.announcements.map((announcement) => (
             <div key={announcement.id} className="announce-item">
               <div className="announce-title">{announcement.title}</div>
               <div className="announce-meta">
                 {announcement.owner} | {announcement.date}
               </div>
             </div>
-          ))}
+          )) : (
+            <div className="empty-state">
+              <strong>No announcements yet</strong>
+              <p>Published updates will appear here once your team starts using the portal.</p>
+            </div>
+          )}
         </article>
       </section>
 
@@ -224,7 +232,7 @@ function EmployeePreview({ onNavigate, onOpenModal }) {
           className="btn btn-ghost"
           onClick={() => onOpenModal("item-request")}
         >
-          Quick demo request
+          Quick request
         </button>
       </div>
     </div>
@@ -795,57 +803,602 @@ export function AdvancePanel({ advances, onSubmitAdvance }) {
   );
 }
 
-export function StockPanel({ stock }) {
+const stockCategories = ["RWHU", "PROGRESSIVE", "Stationary"];
+const stockItemsPerCategoryPage = 7;
+
+function getStockStatus(item) {
+  if (item.isDiscontinued) {
+    return { label: "Discontinued", tone: "gray" };
+  }
+
+  if (Number(item.reservedQty ?? 0) > 0) {
+    return { label: "Reserved", tone: "purple" };
+  }
+
+  if (Number(item.qty ?? 0) <= 0) {
+    return { label: "Out of stock", tone: "red" };
+  }
+
+  if (Number(item.qty ?? 0) < 10) {
+    return { label: "Low stock", tone: "amber" };
+  }
+
+  return { label: "In stock", tone: "green" };
+}
+
+function normalizeCategory(category) {
+  const normalized = String(category ?? "").toLowerCase();
+
+  if (normalized.includes("progressive")) {
+    return "PROGRESSIVE";
+  }
+
+  if (normalized.includes("stationary") || normalized.includes("stationery")) {
+    return "Stationary";
+  }
+
+  return "RWHU";
+}
+
+function getStockItemType(item) {
+  return item?.type || item?.itemType || item?.specification || item?.category || item?.itemCategory || "Not specified";
+}
+
+export function StockPanel({ stock, error = "", token = "", onStockCreated, onStockMovement }) {
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [isAddingItem, setIsAddingItem] = useState(false);
+  const [categoryPages, setCategoryPages] = useState(
+    stockCategories.reduce((pages, category) => ({ ...pages, [category]: 1 }), {})
+  );
+  const [formError, setFormError] = useState("");
+  const [formSuccess, setFormSuccess] = useState("");
+  const [movementError, setMovementError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const groupedStock = useMemo(
+    () =>
+      stockCategories.reduce((groups, category) => {
+        groups[category] = stock.filter((item) => normalizeCategory(item.category) === category);
+        return groups;
+      }, {}),
+    [stock]
+  );
+
+  function updateCategoryPage(category, nextPage) {
+    setCategoryPages((current) => ({
+      ...current,
+      [category]: nextPage
+    }));
+  }
+
+  async function handleAddItem(event) {
+    event.preventDefault();
+    setFormError("");
+    setFormSuccess("");
+
+    const form = new FormData(event.currentTarget);
+    const itemId = String(form.get("itemId") ?? "").trim();
+    const hasDuplicate = stock.some((item) => String(item.itemId ?? item.sku).toLowerCase() === itemId.toLowerCase());
+
+    if (hasDuplicate) {
+      setFormError("This Item ID already exists. Please enter a unique Item ID.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiClient.createInventoryStockItem(token, {
+        itemName: form.get("itemName"),
+        itemType: form.get("itemType"),
+        itemCategory: form.get("itemCategory"),
+        itemId
+      });
+      event.currentTarget.reset();
+      setIsAddingItem(false);
+      setFormSuccess("Item added to inventory.");
+      onStockCreated?.();
+    } catch (submitError) {
+      setFormError(submitError.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleStockMovement(event, movementType) {
+    event.preventDefault();
+    setMovementError("");
+
+    const form = new FormData(event.currentTarget);
+    const stockItemId = Number(form.get("stockItemId"));
+    const quantity = Number(form.get("quantity") || 0);
+    const stockItem = stock.find((item) => item.id === stockItemId);
+
+    if (!stockItem || quantity <= 0) {
+      setMovementError("Select a stock item and enter a valid quantity.");
+      return;
+    }
+
+    if (movementType === "out" && quantity > Number(stockItem.availableQty ?? stockItem.qty ?? 0)) {
+      setMovementError("Stock out quantity cannot exceed available stock.");
+      return;
+    }
+
+    if (!onStockMovement) {
+      return false;
+    }
+
+    onStockMovement({
+      itemId: stockItem.id,
+      itemCode: stockItem.itemId ?? stockItem.sku,
+      itemName: stockItem.name,
+      itemType: getStockItemType(stockItem),
+      unit: stockItem.unit,
+      movementType,
+      quantity,
+      reference: form.get("reference"),
+      location: form.get("location") || stockItem.location,
+      notes: form.get("notes")
+    });
+
+    event.currentTarget.reset();
+    return true;
+  }
+
   return (
-    <article className="card">
-      <h2 className="card-title">Stock overview</h2>
-      <div className="stock-list">
-        {stock.map((item) => (
-          <StockMeter key={item.id} item={item} />
-        ))}
+    <section className="stock-workspace">
+      <div className="stock-header">
+        <div>
+          <p className="section-label">Inventory catalog</p>
+          <h2 className="card-title">Stock overview</h2>
+        </div>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => setIsAddingItem(true)}>
+          Add item
+        </button>
       </div>
+
+      {error ? <p className="form-error">{error}</p> : null}
+      {formSuccess ? <p className="form-success">{formSuccess}</p> : null}
+      {movementError ? <p className="form-error">{movementError}</p> : null}
+
+      <section className="stock-movement-grid" aria-label="Stock movement actions">
+        <StockMovementCard
+          title="Stock in"
+          tone="green"
+          stock={stock}
+          defaultReference="GRN / opening balance"
+          submitLabel="Add stock"
+          onSubmit={(event) => handleStockMovement(event, "in")}
+        />
+        <StockMovementCard
+          title="Stock out"
+          tone="red"
+          stock={stock}
+          defaultReference="Issue slip / requisition"
+          submitLabel="Issue stock"
+          onSubmit={(event) => handleStockMovement(event, "out")}
+        />
+      </section>
+
+      <div className="stock-category-stack">
+        {stockCategories.map((category) => {
+          const categoryItems = groupedStock[category];
+          const totalPages = Math.max(1, Math.ceil(categoryItems.length / stockItemsPerCategoryPage));
+          const currentPage = Math.min(categoryPages[category] ?? 1, totalPages);
+          const pageStart = (currentPage - 1) * stockItemsPerCategoryPage;
+          const visibleCategoryItems = categoryItems.slice(pageStart, pageStart + stockItemsPerCategoryPage);
+
+          return (
+            <article key={category} className="card stock-category-panel">
+              <div className="stock-category-title">
+                <div>
+                  <h3>{category}</h3>
+                  <span>{categoryItems.length} items</span>
+                </div>
+                {categoryItems.length > stockItemsPerCategoryPage ? (
+                  <div className="stock-pagination">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={currentPage === 1}
+                      onClick={() => updateCategoryPage(category, currentPage - 1)}
+                    >
+                      Previous
+                    </button>
+                    <strong>{currentPage} of {totalPages}</strong>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={currentPage === totalPages}
+                      onClick={() => updateCategoryPage(category, currentPage + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              {categoryItems.length ? (
+                <div className="table-wrap stock-table-wrap">
+                  <table className="stock-table">
+                    <thead>
+                      <tr>
+                        <th>Item ID</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Location</th>
+                        <th>Current stock</th>
+                        <th>Available stock</th>
+                        <th>Reserved stock</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleCategoryItems.map((item) => {
+                        const status = getStockStatus(item);
+
+                        return (
+                          <tr key={item.id} className="stock-table-row" onClick={() => setSelectedItem(item)}>
+                            <td className="mono">{item.itemId ?? item.sku}</td>
+                            <td>
+                              <strong>{item.name}</strong>
+                            </td>
+                            <td>{getStockItemType(item)}</td>
+                            <td>{item.location}</td>
+                            <td>{item.qty} {item.unit}</td>
+                            <td>{item.availableQty} {item.unit}</td>
+                            <td>{item.reservedQty} {item.unit}</td>
+                            <td>
+                              <Badge tone={status.tone}>{status.label}</Badge>
+                            </td>
+                            <td>
+                              <div className="stock-row-actions" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setSelectedItem({ ...item, detailMode: "requests" })}
+                                >
+                                  Requests
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setSelectedItem({ ...item, detailMode: "purchaseOrders" })}
+                                >
+                                  POs
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="helper-text">No items recorded in this category yet.</p>
+              )}
+            </article>
+          );
+        })}
+      </div>
+
+      {isAddingItem ? (
+        <div className="modal-overlay open" onMouseDown={(event) => event.target === event.currentTarget && setIsAddingItem(false)}>
+          <form className="modal modal-form" onSubmit={handleAddItem}>
+            <h2 className="modal-title">Add inventory item</h2>
+            {formError ? <p className="form-error full">{formError}</p> : null}
+            <label className="form-group full">
+              <span className="form-label">Item name</span>
+              <input name="itemName" className="form-input" required />
+            </label>
+            <label className="form-group">
+              <span className="form-label">Type</span>
+              <input name="itemType" className="form-input" required />
+            </label>
+            <label className="form-group">
+              <span className="form-label">Category</span>
+              <select name="itemCategory" className="form-select" defaultValue="RWHU" required>
+                {stockCategories.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-group full">
+              <span className="form-label">Item ID</span>
+              <input name="itemId" className="form-input" required />
+            </label>
+            <div className="modal-footer full">
+              <button type="button" className="btn btn-ghost" onClick={() => setIsAddingItem(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                {isSubmitting ? "Adding..." : "Add item"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {selectedItem ? (
+        <div className="stock-float" role="dialog" aria-modal="true">
+          <div className="stock-float-header">
+            <div>
+              <span className="mono">{selectedItem.itemId ?? selectedItem.sku}</span>
+              <h3>{selectedItem.name}</h3>
+            </div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedItem(null)}>
+              Close
+            </button>
+          </div>
+          <div className="stock-detail-grid">
+            <DetailValue label="Item ID" value={selectedItem.itemId ?? selectedItem.sku} />
+            <DetailValue label="Type" value={selectedItem.type} />
+            <DetailValue label="Units available" value={`${selectedItem.availableQty} ${selectedItem.unit}`} />
+            <DetailValue label="Default storage location" value={selectedItem.location} />
+          </div>
+          {selectedItem.detailMode === "requests" ? (
+            <LinkedList title="Requests against item" items={selectedItem.linkedRequests} empty="No linked requests found." />
+          ) : null}
+          {selectedItem.detailMode === "purchaseOrders" ? (
+            <LinkedList title="POs linked with item" items={selectedItem.linkedPurchaseOrders} empty="No linked purchase orders found." />
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function StockMovementCard({ title, tone, stock, defaultReference, submitLabel, onSubmit }) {
+  const [selectedStockItemId, setSelectedStockItemId] = useState("");
+  const selectedStockItem = stock.find((item) => String(item.id) === selectedStockItemId);
+  const isStockIn = title === "Stock in";
+
+  function handleSubmit(event) {
+    const didSubmit = onSubmit(event);
+    if (didSubmit) {
+      setSelectedStockItemId("");
+    }
+  }
+
+  return (
+    <article className={`stock-movement-card ${tone}`}>
+      <div>
+        <p className="section-label">{title}</p>
+        <h3>{isStockIn ? "Receive inventory" : "Issue inventory"}</h3>
+      </div>
+      <form className="stock-movement-form" onSubmit={handleSubmit}>
+        <label className="form-group full">
+          <span className="form-label">Item name</span>
+          <select
+            name="stockItemId"
+            className="form-select"
+            value={selectedStockItemId}
+            onChange={(event) => setSelectedStockItemId(event.target.value)}
+            required
+          >
+            <option value="">Select item name</option>
+            {stock.map((item) => (
+              <option key={`${title}-${item.id}`} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-group">
+          <span className="form-label">Type</span>
+          <input
+            className="form-input"
+            value={selectedStockItem ? getStockItemType(selectedStockItem) : ""}
+            placeholder="Auto-filled"
+            readOnly
+          />
+        </label>
+        <label className="form-group">
+          <span className="form-label">Item ID</span>
+          <input
+            className="form-input mono"
+            value={selectedStockItem ? selectedStockItem.itemId ?? selectedStockItem.sku ?? "" : ""}
+            placeholder="Auto-filled"
+            readOnly
+          />
+        </label>
+        <label className="form-group">
+          <span className="form-label">{isStockIn ? "Received quantity" : "Issued quantity"}</span>
+          <input name="quantity" className="form-input" type="number" min="1" step="1" required />
+        </label>
+        <label className="form-group">
+          <span className="form-label">Location</span>
+          <input name="location" className="form-input" placeholder="Store / rack / site" />
+        </label>
+        <label className="form-group">
+          <span className="form-label">Reference</span>
+          <input name="reference" className="form-input" placeholder={defaultReference} />
+        </label>
+        <label className="form-group">
+          <span className="form-label">Notes</span>
+          <input name="notes" className="form-input" placeholder="Optional remarks" />
+        </label>
+        <div className="modal-footer full">
+          <button type="submit" className={tone === "green" ? "btn btn-success btn-sm" : "btn btn-danger btn-sm"}>
+            {submitLabel}
+          </button>
+        </div>
+      </form>
     </article>
   );
 }
 
-function StockMeter({ item }) {
-  const percentage = Math.max(4, Math.min(100, Math.round((item.qty / Math.max(item.min * 4, 1)) * 100)));
-  const tone = item.qty <= item.min ? "red" : item.qty <= item.min * 2 ? "amber" : "green";
-
+function DetailValue({ label, value }) {
   return (
-    <div className="stock-item">
-      <div className="stock-name">{item.name}</div>
-      <div className="stock-bar-wrap">
-        <div className="progress-bar">
-          <div className={`progress-fill fill-${tone}`} style={{ width: `${percentage}%` }} />
-        </div>
-      </div>
-      <div className="stock-qty">
-        {item.qty} {item.unit}
-      </div>
+    <div className="stock-detail-value">
+      <span>{label}</span>
+      <strong>{value || "Not recorded"}</strong>
     </div>
   );
 }
 
-export function StockLogPanel({ stockLogs }) {
+function LinkedList({ title, items = [], empty }) {
   return (
-    <article className="card">
-      <h2 className="card-title">Stock transactions</h2>
-      <RequestTable
-        headers={["Time", "Item", "Movement", "Actor", "Reference"]}
-        rows={stockLogs.map((log) => [
-          <span key={`${log.id}-time`} className="mono">
-            {log.time}
-          </span>,
-          log.item,
-          <Badge key={`${log.id}-badge`} tone={log.movement.startsWith("+") ? "green" : "red"}>
-            {log.movement}
-          </Badge>,
-          log.actor,
-          log.reference
-        ])}
-      />
-    </article>
+    <div className="stock-linked-list">
+      <h4>{title}</h4>
+      {items.length ? (
+        items.map((item) => (
+          <div key={`${title}-${item.id}-${item.requisitionItemId ?? item.poNumber}`} className="stock-linked-item">
+            <span className="mono">{item.requestId ?? item.poNumber}</span>
+            <Badge tone={getBadgeTone(item.status)}>{String(item.status ?? "Open").replaceAll("_", " ")}</Badge>
+            <strong>{item.quantity} units</strong>
+          </div>
+        ))
+      ) : (
+        <p className="helper-text">{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function getBadgeTone(value) {
+  const normalized = String(value ?? "").toLowerCase();
+
+  if (normalized.includes("cancel") || normalized.includes("reject")) {
+    return "red";
+  }
+
+  if (normalized.includes("partial") || normalized.includes("approved") || normalized.includes("draft")) {
+    return "amber";
+  }
+
+  if (normalized.includes("received") || normalized.includes("fulfilled") || normalized.includes("issued")) {
+    return "green";
+  }
+
+  return "blue";
+}
+
+function getMovementQuantity(log) {
+  if (Number.isFinite(Number(log.quantity))) {
+    return Number(log.quantity);
+  }
+
+  const parsed = Number.parseFloat(String(log.movement ?? "").replace(/[+-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function StockLogPanel({ stockLogs, stock = [] }) {
+  const [selectedItemKey, setSelectedItemKey] = useState("all");
+  const selectedItem = stock.find((item) => String(item.id) === selectedItemKey);
+  const visibleLogs = useMemo(() => {
+    if (selectedItemKey === "all") {
+      return stockLogs;
+    }
+
+    return stockLogs.filter((log) => String(log.itemId) === selectedItemKey);
+  }, [selectedItemKey, stockLogs]);
+  const stockInTotal = visibleLogs
+    .filter((log) => log.type === "in" || String(log.movement).startsWith("+"))
+    .reduce((total, log) => total + getMovementQuantity(log), 0);
+  const stockOutTotal = visibleLogs
+    .filter((log) => log.type === "out" || String(log.movement).startsWith("-"))
+    .reduce((total, log) => total + getMovementQuantity(log), 0);
+
+  return (
+    <div className="workspace-stack">
+      <article className="card stock-history-hero">
+        <div className="card-header">
+          <div>
+            <p className="section-label">Traceability</p>
+            <h2 className="card-title">Stock history by item</h2>
+          </div>
+          <label className="form-group stock-history-filter">
+            <span className="form-label">Item trace</span>
+            <select
+              className="form-select"
+              value={selectedItemKey}
+              onChange={(event) => setSelectedItemKey(event.target.value)}
+            >
+              <option value="all">All items</option>
+              {stock.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.itemId ?? item.sku} - {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="stock-history-summary">
+          <div className="summary-tile">
+            <span>Current balance</span>
+            <strong>{selectedItem ? `${selectedItem.qty} ${selectedItem.unit}` : "All items"}</strong>
+          </div>
+          <div className="summary-tile">
+            <span>Stock in</span>
+            <strong>+{stockInTotal}</strong>
+          </div>
+          <div className="summary-tile">
+            <span>Stock out</span>
+            <strong>-{stockOutTotal}</strong>
+          </div>
+          <div className="summary-tile">
+            <span>Trace entries</span>
+            <strong>{visibleLogs.length}</strong>
+          </div>
+        </div>
+      </article>
+
+      <section className="two-col">
+        <article className="card">
+          <h2 className="card-title">Movement timeline</h2>
+          {visibleLogs.length ? (
+            <div className="stock-trace-list">
+              {visibleLogs.map((log) => {
+                const isStockIn = log.type === "in" || String(log.movement).startsWith("+");
+
+                return (
+                  <div key={`${log.id}-trace`} className={`stock-trace-item ${isStockIn ? "in" : "out"}`}>
+                    <span className="stock-trace-marker" />
+                    <div>
+                      <strong>{isStockIn ? "Stock in" : "Stock out"} - {log.item}</strong>
+                      <p>
+                        <Badge tone={isStockIn ? "green" : "red"}>{log.movement}</Badge>{" "}
+                        {log.reference || "Manual movement"}
+                      </p>
+                      <small>
+                        {log.date ?? "Today"} at {log.time} | {log.actor}
+                        {log.location ? ` | ${log.location}` : ""}
+                      </small>
+                      {log.notes ? <p className="helper-text">{log.notes}</p> : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="helper-text">No stock movement has been recorded for this selection yet.</p>
+          )}
+        </article>
+
+        <article className="card">
+          <h2 className="card-title">Transaction register</h2>
+          <RequestTable
+            headers={["Date", "Time", "Item", "Movement", "Actor", "Reference"]}
+            rows={visibleLogs.map((log) => [
+              log.date ?? "Today",
+              <span key={`${log.id}-time`} className="mono">
+                {log.time}
+              </span>,
+              log.item,
+              <Badge key={`${log.id}-badge`} tone={String(log.movement).startsWith("+") ? "green" : "red"}>
+                {log.movement}
+              </Badge>,
+              log.actor,
+              log.reference || "-"
+            ])}
+          />
+        </article>
+      </section>
+    </div>
   );
 }
 
@@ -901,29 +1454,31 @@ export function PurchaseOrdersPanel({ purchaseOrders, onOpenModal }) {
 }
 
 export function GoodsReceiptPanel({ receipts }) {
+  const rows = receipts.map((receipt) => [
+    <span key={`${receipt.id}-grn`} className="mono">
+      {receipt.grnId ?? receipt.grnNumber ?? receipt.number}
+    </span>,
+    <span key={`${receipt.id}-po`} className="mono">
+      {receipt.poNumber ?? receipt.po}
+    </span>,
+    receipt.quantityReceived ?? receipt.receivedQuantity ?? receipt.quantity ?? receipt.items,
+    receipt.grnDate ?? receipt.date ?? receipt.receivedAt,
+    receipt.receivedBy ?? receipt.receiver?.fullName ?? receipt.receiver ?? "Not recorded",
+    receipt.location ?? receipt.storageLocation ?? receipt.defaultLocation ?? "Main store",
+    receipt.notes ?? receipt.remarks ?? receipt.notesRemarks ?? "-"
+  ]);
+
   return (
     <article className="card">
       <h2 className="card-title">Goods receipt notes</h2>
-      <RequestTable
-        headers={["GRN", "PO", "Vendor", "Items", "Date", "Stock", "Finance"]}
-        rows={receipts.map((receipt) => [
-          <span key={`${receipt.id}-grn`} className="mono">
-            {receipt.number}
-          </span>,
-          <span key={`${receipt.id}-po`} className="mono">
-            {receipt.po}
-          </span>,
-          receipt.vendor,
-          receipt.items,
-          receipt.date,
-          <Badge key={`${receipt.id}-stock`} tone="green">
-            posted
-          </Badge>,
-          <Badge key={`${receipt.id}-finance`} tone={receipt.finance === "matched" ? "green" : "amber"}>
-            {receipt.finance}
-          </Badge>
-        ])}
-      />
+      {rows.length ? (
+        <RequestTable
+          headers={["GRN ID", "PO number", "Quantity received", "GRN date", "Received by", "Location", "Notes/Remarks"]}
+          rows={rows}
+        />
+      ) : (
+        <p className="helper-text">No goods receipt notes have been recorded yet.</p>
+      )}
     </article>
   );
 }

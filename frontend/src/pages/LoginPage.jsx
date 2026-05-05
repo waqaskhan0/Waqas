@@ -2,75 +2,17 @@ import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
-const defaultPassword = "Password123!";
-
-const demoAccounts = [
-  {
-    role: "EMPLOYEE",
-    label: "Employee",
-    name: "Ayaan Employee",
-    email: "employee@ims.local"
-  },
-  {
-    role: "LINE_MANAGER",
-    label: "Line Manager",
-    name: "Layla Manager",
-    email: "manager@ims.local"
-  },
-  {
-    role: "INVENTORY_OFFICER",
-    label: "Inventory Officer",
-    name: "Inaya Inventory",
-    email: "inventory@ims.local"
-  },
-  {
-    role: "PROCUREMENT_OFFICER",
-    label: "Procurement Officer",
-    name: "Omar Procurement",
-    email: "procurement@ims.local"
-  },
-  {
-    role: "FINANCE",
-    label: "Finance",
-    name: "Sara Finance",
-    email: "finance@ims.local"
-  },
-  {
-    role: "HR_OFFICER",
-    label: "HR Officer",
-    name: "Nadia HR",
-    email: "hr@ims.local"
-  },
-  {
-    role: "SUPER_ADMIN",
-    label: "Super Admin",
-    name: "Super Admin",
-    email: "admin@ims.local"
-  }
-];
-
 export function LoginPage() {
   const { isAuthenticated, signIn } = useAuth();
-  const [selectedRole, setSelectedRole] = useState(demoAccounts[0].role);
   const [formValues, setFormValues] = useState({
-    email: demoAccounts[0].email,
-    password: defaultPassword
+    email: "",
+    password: ""
   });
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
-  }
-
-  function selectDemoAccount(role) {
-    const account = demoAccounts.find((item) => item.role === role) ?? demoAccounts[0];
-    setSelectedRole(account.role);
-    setFormValues({
-      email: account.email,
-      password: defaultPassword
-    });
-    setError("");
   }
 
   async function handleSubmit(event) {
@@ -96,21 +38,6 @@ export function LoginPage() {
         <p className="login-subtitle">Enterprise resource and inventory workflow system</p>
 
         <form className="login-form" onSubmit={handleSubmit}>
-          <label className="login-field">
-            <span>Demo role</span>
-            <select
-              value={selectedRole}
-              onChange={(event) => selectDemoAccount(event.target.value)}
-              className="login-select"
-            >
-              {demoAccounts.map((account) => (
-                <option key={account.role} value={account.role}>
-                  {account.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <label className="login-field">
             <span>Email</span>
             <input
@@ -144,21 +71,22 @@ export function LoginPage() {
           </button>
         </form>
 
-        <p className="login-hint">Demo accounts use the default seeded password.</p>
+        <p className="login-hint">Enter your assigned workspace credentials to continue.</p>
       </section>
 
       <aside className="login-roles">
-        {demoAccounts.map((account) => (
-          <button
-            key={account.role}
-            type="button"
-            className={account.role === selectedRole ? "role-chip active" : "role-chip"}
-            onClick={() => selectDemoAccount(account.role)}
-          >
-            <span>{account.label}</span>
-            <strong>{account.name}</strong>
-          </button>
-        ))}
+        <div className="role-chip active">
+          <span>Secure access</span>
+          <strong>Sign in with your assigned account</strong>
+        </div>
+        <div className="role-chip">
+          <span>Access control</span>
+          <strong>Role permissions are applied after login</strong>
+        </div>
+        <div className="role-chip">
+          <span>Need help?</span>
+          <strong>Contact your system administrator for access</strong>
+        </div>
       </aside>
     </main>
   );

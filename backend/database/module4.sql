@@ -68,14 +68,4 @@ CREATE INDEX idx_inventory_allocations_stock_item ON inventory_allocations(stock
 CREATE INDEX idx_inventory_transactions_stock_item ON inventory_transactions(stock_item_id);
 CREATE INDEX idx_inventory_transactions_requisition ON inventory_transactions(requisition_id);
 
-INSERT INTO inventory_stock (
-  sku,
-  item_name,
-  specification,
-  unit,
-  quantity_on_hand,
-  reorder_level
-) VALUES
-  ('PVC-TANK-1000', 'watertank pvc', '1000 litre', 'pcs', 25, 10),
-  ('WIRE-MOUSE-ERG', 'wireless mouse', 'Bluetooth ergonomic', 'pcs', 40, 8),
-  ('KB-MECH-STD', 'mechanical keyboard', 'Standard office layout', 'pcs', 12, 4);
+-- Inventory stock is now imported from the workbook-backed inventory catalog.

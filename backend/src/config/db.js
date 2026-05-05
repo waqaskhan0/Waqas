@@ -20,6 +20,10 @@ export function getPool() {
   return pool;
 }
 
+export async function assertDatabaseConnection() {
+  await getPool().query("SELECT 1");
+}
+
 export async function query(sql, params = []) {
   const [rows] = await getPool().execute(sql, params);
   return rows;

@@ -122,8 +122,31 @@ export const apiClient = {
       }
     });
   },
+  getInventoryDashboard(token) {
+    return request("/inventory/dashboard", {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
+  listInventoryRequests(token) {
+    return request("/inventory/requests", {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
   listInventoryStock(token) {
     return request("/inventory/stock", {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
+  createInventoryStockItem(token, payload) {
+    return request("/inventory/stock", {
+      method: "POST",
+      body: JSON.stringify(payload),
       headers: {
         Authorization: `Bearer ${token}`
       }

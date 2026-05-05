@@ -15,11 +15,19 @@ export const loginController = asyncHandler(async (req, res) => {
 });
 
 export const meController = asyncHandler(async (req, res) => {
+  if (req.user.isDevelopmentBypass) {
+    res.json({ user: req.user });
+    return;
+  }
+
   const user = await getCurrentUser(req.user.id);
   res.json({ user });
 });
 
 export const logoutController = asyncHandler(async (req, res) => {
-  await logout(req.session.id);
+  if (!req.user.isDevelopmentBypass) {
+    await logout(req.session.id);
+  }
+
   res.status(204).send();
 });

@@ -35,7 +35,7 @@ export const listMyRequisitionsController = asyncHandler(async (req, res) => {
 });
 
 export const listManagerRequisitionsController = asyncHandler(async (req, res) => {
-  const requisitions = await listManagerRequisitions(req.user.id);
+  const requisitions = await listManagerRequisitions(req.user);
   res.json({ requisitions });
 });
 

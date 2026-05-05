@@ -59,3 +59,36 @@ export function parseInventoryProcessingPayload(payload) {
     })
   };
 }
+
+function parseRequiredText(value, fieldName, maxLength) {
+  const parsed = String(value ?? "").trim();
+
+  if (!parsed) {
+    throw new ApiError(400, `${fieldName} is required.`);
+  }
+
+  if (parsed.length > maxLength) {
+    throw new ApiError(400, `${fieldName} must be ${maxLength} characters or less.`);
+  }
+
+  return parsed;
+}
+
+export function parseCreateStockItemPayload(payload) {
+  const itemName = parseRequiredText(payload.itemName, "Item name", 160);
+  const itemType = parseRequiredText(payload.itemType, "Type", 80);
+  const itemCategory = parseRequiredText(payload.itemCategory, "Category", 40);
+  const itemId = parseRequiredText(payload.itemId, "Item ID", 40);
+
+  if (!["RWHU", "PROGRESSIVE", "Stationary"].includes(itemCategory)) {
+    throw new ApiError(400, "Category must be RWHU, PROGRESSIVE, or Stationary.");
+  }
+
+  return {
+    itemName,
+    itemType,
+    itemCategory,
+    itemId,
+    defaultLocation: String(payload.defaultLocation ?? "Main store").trim() || "Main store"
+  };
+}

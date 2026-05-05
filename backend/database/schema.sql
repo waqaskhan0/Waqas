@@ -314,17 +314,7 @@ CREATE INDEX idx_notifications_created_at ON notifications(created_at);
 CREATE INDEX idx_notification_recipients_user ON notification_recipients(recipient_user_id);
 CREATE INDEX idx_notification_recipients_status ON notification_recipients(status);
 
-INSERT INTO inventory_stock (
-  sku,
-  item_name,
-  specification,
-  unit,
-  quantity_on_hand,
-  reorder_level
-) VALUES
-  ('PVC-TANK-1000', 'watertank pvc', '1000 litre', 'pcs', 25, 10),
-  ('WIRE-MOUSE-ERG', 'wireless mouse', 'Bluetooth ergonomic', 'pcs', 40, 8),
-  ('KB-MECH-STD', 'mechanical keyboard', 'Standard office layout', 'pcs', 12, 4);
+-- Inventory stock is now imported from the workbook-backed inventory catalog.
 
 INSERT INTO vendors (
   vendor_code,

@@ -1,5 +1,176 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../api/client.js";
+
+const emptyFilters = {
+  requestId: "",
+  department: "",
+  location: "",
+  approvalStatus: "",
+  issuanceStatus: "",
+  date: "",
+  requestedBy: ""
+};
+
+const locationOptions = ["I9 warehouse", "Secretariat", "NSR CC", "RWP CC"];
+
+const departmentOptions = [
+  "admin",
+  "procurement",
+  "communication",
+  "programe",
+  "HR",
+  "IT",
+  "AI",
+  "data management",
+  "monitoring",
+  "project management",
+  "finance",
+  "Design & architect"
+];
+
+const approvalStatusOptions = ["Approved", "Pending", "Rejected"];
+
+const issuanceStatusOptions = ["Issued", "Pending", "not issued"];
+
+const sampleRequests = [
+  {
+    id: "sample-req-001-1",
+    requisitionId: "sample-req-001",
+    requisitionItemId: "sample-line-001",
+    requestId: "REQ-20260505-1042",
+    requestDate: "2026-05-05",
+    submittedAt: "2026-05-05T09:20:00",
+    department: "admin",
+    location: "Secretariat",
+    requestedBy: "Ayesha Khan",
+    requesterEmail: "ayesha.khan@example.com",
+    requesterEmployeeCode: "EMP-014",
+    itemId: "STN-001",
+    itemName: "A4 Printer Paper",
+    itemType: "Stationery",
+    itemCategory: "Stationary",
+    itemSpecification: "Category: Stationary | Type: Paper | Item ID: STN-001 | Notes: For monthly office printing",
+    quantityRequested: 12,
+    unit: "reams",
+    manager: {
+      fullName: "Bilal Ahmed",
+      email: "bilal.ahmed@example.com"
+    },
+    approvalStatus: "Pending",
+    issuanceStatus: "not issued",
+    notes: "For monthly office printing and file preparation.",
+    decisionRemarks: "",
+    inventoryRemarks: "",
+    approvedAt: null,
+    rejectedAt: null,
+    fulfilledAt: null,
+    issuedQuantity: 0,
+    procurementQuantity: 0,
+    stockItem: {
+      id: "sample-stock-001",
+      sku: "STN-001",
+      itemName: "A4 Printer Paper",
+      quantityOnHand: 36,
+      unit: "reams"
+    },
+    isSample: true
+  },
+  {
+    id: "sample-req-002-1",
+    requisitionId: "sample-req-002",
+    requisitionItemId: "sample-line-002",
+    requestId: "REQ-20260504-3381",
+    requestDate: "2026-05-04",
+    submittedAt: "2026-05-04T14:05:00",
+    department: "procurement",
+    location: "I9 warehouse",
+    requestedBy: "Usman Tariq",
+    requesterEmail: "usman.tariq@example.com",
+    requesterEmployeeCode: "EMP-027",
+    itemId: "SAF-014",
+    itemName: "Safety Gloves",
+    itemType: "PPE",
+    itemCategory: "Safety",
+    itemSpecification: "Category: Safety | Type: PPE | Item ID: SAF-014 | Notes: Required for warehouse team",
+    quantityRequested: 50,
+    unit: "pairs",
+    manager: {
+      fullName: "Nadia Sheikh",
+      email: "nadia.sheikh@example.com"
+    },
+    approvalStatus: "Approved",
+    issuanceStatus: "Issued",
+    notes: "Required for incoming warehouse staff rotation.",
+    decisionRemarks: "Approved for immediate warehouse use.",
+    inventoryRemarks: "Issued 20 pairs from stock; remaining quantity routed to procurement.",
+    approvedAt: "2026-05-04T16:30:00",
+    rejectedAt: null,
+    fulfilledAt: null,
+    issuedQuantity: 20,
+    procurementQuantity: 30,
+    stockItem: {
+      id: "sample-stock-014",
+      sku: "SAF-014",
+      itemName: "Safety Gloves",
+      quantityOnHand: 20,
+      unit: "pairs"
+    },
+    isSample: true
+  },
+  {
+    id: "sample-req-003-1",
+    requisitionId: "sample-req-003",
+    requisitionItemId: "sample-line-003",
+    requestId: "REQ-20260503-7819",
+    requestDate: "2026-05-03",
+    submittedAt: "2026-05-03T11:10:00",
+    department: "IT",
+    location: "NSR CC",
+    requestedBy: "Hamza Noor",
+    requesterEmail: "hamza.noor@example.com",
+    requesterEmployeeCode: "EMP-041",
+    itemId: "IT-220",
+    itemName: "Network Switch",
+    itemType: "Hardware",
+    itemCategory: "IT Equipment",
+    itemSpecification: "Category: IT Equipment | Type: Hardware | Item ID: IT-220 | Notes: Replacement for access rack",
+    quantityRequested: 2,
+    unit: "units",
+    manager: {
+      fullName: "Sana Malik",
+      email: "sana.malik@example.com"
+    },
+    approvalStatus: "Approved",
+    issuanceStatus: "Pending",
+    notes: "Replacement switches for access rack upgrade.",
+    decisionRemarks: "Approved due to aging network equipment.",
+    inventoryRemarks: "No matching stock available; sent to procurement.",
+    approvedAt: "2026-05-03T13:45:00",
+    rejectedAt: null,
+    fulfilledAt: null,
+    issuedQuantity: 0,
+    procurementQuantity: 2,
+    stockItem: null,
+    isSample: true
+  }
+];
+
+const sampleStockItems = [
+  {
+    id: "sample-stock-001",
+    sku: "STN-001",
+    itemName: "A4 Printer Paper",
+    quantityOnHand: 36,
+    unit: "reams"
+  },
+  {
+    id: "sample-stock-014",
+    sku: "SAF-014",
+    itemName: "Safety Gloves",
+    quantityOnHand: 20,
+    unit: "pairs"
+  }
+];
 
 function formatDate(value) {
   if (!value) {
@@ -15,119 +186,164 @@ function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }
 
-function formatDateTime(value) {
-  if (!value) {
-    return "Pending";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(date);
+function formatStatus(value) {
+  return String(value ?? "Not set");
 }
 
 function getStatusClassName(status) {
-  return String(status ?? "APPROVED").toLowerCase().replaceAll("_", "-");
+  return String(status ?? "pending")
+    .toLowerCase()
+    .replaceAll(" ", "-")
+    .replaceAll("_", "-");
 }
 
-function buildQueueSummary(requisition) {
+function normalizeApprovalStatus(status) {
+  const normalized = String(status ?? "").toLowerCase();
+
+  if (normalized.includes("reject")) {
+    return "Rejected";
+  }
+
+  if (normalized.includes("pending") || normalized.includes("submitted")) {
+    return "Pending";
+  }
+
+  return "Approved";
+}
+
+function normalizeIssuanceStatus(status) {
+  const normalized = String(status ?? "").toLowerCase();
+
+  if (normalized === "issued" || normalized.includes("fulfilled")) {
+    return "Issued";
+  }
+
+  if (normalized.includes("pending") || normalized.includes("awaiting") || normalized.includes("procurement")) {
+    return "Pending";
+  }
+
+  return "not issued";
+}
+
+function normalizeRequestOptions(request) {
   return {
-    id: requisition.id,
-    requisitionNumber: requisition.requisitionNumber,
-    title: requisition.title,
-    status: requisition.status,
-    approvedAt: requisition.approvedAt,
-    fulfilledAt: requisition.fulfilledAt,
-    itemCount: requisition.items.length,
-    totalQuantity: requisition.items.reduce(
-      (total, item) => total + Number(item.quantity ?? 0),
-      0
-    ),
-    requester: requisition.requester
+    ...request,
+    approvalStatus: normalizeApprovalStatus(request.approvalStatus),
+    issuanceStatus: normalizeIssuanceStatus(request.issuanceStatus)
   };
 }
 
-function buildLineState(requisition) {
-  if (!requisition) {
-    return [];
+function includesText(value, search) {
+  return String(value ?? "").toLowerCase().includes(String(search ?? "").trim().toLowerCase());
+}
+
+function findStockAvailability(request, stockItems) {
+  if (request.stockItem) {
+    return {
+      found: true,
+      sku: request.stockItem.sku,
+      itemName: request.stockItem.itemName,
+      quantity: request.stockItem.quantityOnHand,
+      unit: request.stockItem.unit
+    };
   }
 
-  const allocationMap = new Map(
-    (requisition.inventoryAllocations ?? []).map((allocation) => [
-      allocation.requisitionItemId,
-      allocation
-    ])
-  );
+  const itemId = String(request.itemId ?? "").toLowerCase();
+  const itemName = String(request.itemName ?? "").toLowerCase();
+  const match = stockItems.find((stockItem) => {
+    const sku = String(stockItem.sku ?? "").toLowerCase();
+    const stockName = String(stockItem.itemName ?? "").toLowerCase();
 
-  return requisition.items.map((item) => {
-    const allocation = allocationMap.get(item.id);
+    return (
+      (itemId && sku === itemId) ||
+      (itemName && stockName.includes(itemName)) ||
+      (stockName && itemName.includes(stockName))
+    );
+  });
 
+  if (!match) {
     return {
-      requisitionItemId: item.id,
-      stockItemId: allocation?.stockItemId ? String(allocation.stockItemId) : "",
-      quantityIssued:
-        allocation?.quantityIssued !== undefined ? String(allocation.quantityIssued) : "0"
+      found: false,
+      quantity: 0,
+      unit: request.unit
     };
+  }
+
+  return {
+    found: true,
+    sku: match.sku,
+    itemName: match.itemName,
+    quantity: match.quantityOnHand,
+    unit: match.unit
+  };
+}
+
+function filterRequests(requests, filters) {
+  return requests.filter((request) => {
+    const dateValue = request.requestDate || request.submittedAt;
+
+    return (
+      includesText(request.requestId, filters.requestId) &&
+      includesText(request.department, filters.department) &&
+      includesText(request.location, filters.location) &&
+      includesText(request.approvalStatus, filters.approvalStatus) &&
+      includesText(request.issuanceStatus, filters.issuanceStatus) &&
+      includesText(request.requestedBy, filters.requestedBy) &&
+      (!filters.date || String(dateValue ?? "").slice(0, 10) === filters.date)
+    );
   });
 }
 
+function DetailBlock({ title, children }) {
+  return (
+    <section className="request-detail-block">
+      <h3>{title}</h3>
+      <div className="request-detail-grid">{children}</div>
+    </section>
+  );
+}
+
+function DetailField({ label, value }) {
+  return (
+    <div className="request-detail-field">
+      <span>{label}</span>
+      <strong>{value || "Not provided"}</strong>
+    </div>
+  );
+}
+
 export function InventoryWorkspace({ token }) {
-  const [queue, setQueue] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [stockItems, setStockItems] = useState([]);
-  const [selectedRequisitionId, setSelectedRequisitionId] = useState(null);
-  const [selectedRequisition, setSelectedRequisition] = useState(null);
-  const [lineStates, setLineStates] = useState([]);
-  const [remarks, setRemarks] = useState("");
-  const [queueError, setQueueError] = useState("");
-  const [stockError, setStockError] = useState("");
-  const [detailError, setDetailError] = useState("");
-  const [submitError, setSubmitError] = useState("");
-  const [submitSuccess, setSubmitSuccess] = useState("");
-  const [notificationPreview, setNotificationPreview] = useState(null);
-  const [isLoadingQueue, setIsLoadingQueue] = useState(true);
+  const [filters, setFilters] = useState(emptyFilters);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [stockCapsuleId, setStockCapsuleId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingStock, setIsLoadingStock] = useState(true);
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [stockError, setStockError] = useState("");
 
   useEffect(() => {
     let ignore = false;
 
-    async function loadQueue() {
-      setIsLoadingQueue(true);
-      setQueueError("");
+    async function loadRequests() {
+      setIsLoading(true);
+      setError("");
 
       try {
-        const response = await apiClient.listInventoryQueue(token);
+        const response = await apiClient.listInventoryRequests(token);
 
-        if (ignore) {
-          return;
-        }
-
-        setQueue(response.requisitions);
-        setSelectedRequisitionId((current) => {
-          if (!response.requisitions.length) {
-            return null;
-          }
-
-          const nextId = current ?? response.requisitions[0].id;
-
-          return response.requisitions.some((requisition) => requisition.id === nextId)
-            ? nextId
-            : response.requisitions[0].id;
-        });
-      } catch (error) {
         if (!ignore) {
-          setQueueError(error.message);
+          setRequests(response.requests);
+        }
+      } catch (loadError) {
+        if (!ignore) {
+          setError(loadError.message);
+          setRequests([]);
         }
       } finally {
         if (!ignore) {
-          setIsLoadingQueue(false);
+          setIsLoading(false);
         }
       }
     }
@@ -142,9 +358,10 @@ export function InventoryWorkspace({ token }) {
         if (!ignore) {
           setStockItems(response.stockItems);
         }
-      } catch (error) {
+      } catch (loadError) {
         if (!ignore) {
-          setStockError(error.message);
+          setStockError(loadError.message);
+          setStockItems([]);
         }
       } finally {
         if (!ignore) {
@@ -153,7 +370,7 @@ export function InventoryWorkspace({ token }) {
       }
     }
 
-    loadQueue();
+    loadRequests();
     loadStock();
 
     return () => {
@@ -161,427 +378,334 @@ export function InventoryWorkspace({ token }) {
     };
   }, [token]);
 
-  useEffect(() => {
-    let ignore = false;
+  const visibleRequests = (requests.length ? requests : sampleRequests).map(normalizeRequestOptions);
+  const visibleStockItems = stockItems.length ? stockItems : sampleStockItems;
+  const isShowingSamples = !requests.length && !isLoading && !error;
+  const filteredRequests = useMemo(
+    () => filterRequests(visibleRequests, filters),
+    [visibleRequests, filters]
+  );
 
-    async function loadDetail() {
-      if (!selectedRequisitionId) {
-        setSelectedRequisition(null);
-        setLineStates([]);
-        return;
-      }
-
-      setIsLoadingDetail(true);
-      setDetailError("");
-
-      try {
-        const response = await apiClient.getRequisitionById(token, selectedRequisitionId);
-
-        if (!ignore) {
-          setSelectedRequisition(response.requisition);
-          setLineStates(buildLineState(response.requisition));
-          setRemarks(response.requisition.inventoryAllocations?.[0]?.remarks ?? "");
-        }
-      } catch (error) {
-        if (!ignore) {
-          setDetailError(error.message);
-        }
-      } finally {
-        if (!ignore) {
-          setIsLoadingDetail(false);
-        }
-      }
-    }
-
-    loadDetail();
-
-    return () => {
-      ignore = true;
-    };
-  }, [selectedRequisitionId, token]);
-
-  function updateLineState(requisitionItemId, field, value) {
-    setLineStates((current) =>
-      current.map((line) =>
-        line.requisitionItemId === requisitionItemId ? { ...line, [field]: value } : line
-      )
-    );
+  function updateFilter(field, value) {
+    setFilters((current) => ({
+      ...current,
+      [field]: value
+    }));
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-
-    if (!selectedRequisition) {
-      return;
-    }
-
-    setSubmitError("");
-    setSubmitSuccess("");
-    setNotificationPreview(null);
-    setIsSubmitting(true);
-
-    try {
-      const response = await apiClient.processInventoryDecision(
-        token,
-        selectedRequisition.id,
-        {
-          remarks,
-          lines: lineStates.map((line) => ({
-            requisitionItemId: line.requisitionItemId,
-            stockItemId: line.stockItemId ? Number(line.stockItemId) : null,
-            quantityIssued: Number(line.quantityIssued)
-          }))
-        }
-      );
-
-      setSelectedRequisition(response.requisition);
-      setLineStates(buildLineState(response.requisition));
-      setNotificationPreview(response.notification);
-      setSubmitSuccess(
-        `Inventory decision saved for ${response.requisition.requisitionNumber}.`
-      );
-      setQueue((current) =>
-        current
-          .map((requisition) =>
-            requisition.id === response.requisition.id
-              ? buildQueueSummary(response.requisition)
-              : requisition
-          )
-          .sort((left, right) => {
-            const statusOrder = {
-              APPROVED: 0,
-              PARTIALLY_FULFILLED: 1,
-              PROCUREMENT_PENDING: 2,
-              FULFILLED: 3
-            };
-
-            return (
-              (statusOrder[left.status] ?? 99) - (statusOrder[right.status] ?? 99) ||
-              new Date(right.approvedAt ?? 0).getTime() -
-                new Date(left.approvedAt ?? 0).getTime()
-            );
-          })
-      );
-
-      const stockResponse = await apiClient.listInventoryStock(token);
-      setStockItems(stockResponse.stockItems);
-    } catch (error) {
-      setSubmitError(error.message);
-    } finally {
-      setIsSubmitting(false);
-    }
+  function clearFilters() {
+    setFilters(emptyFilters);
   }
-
-  const pendingCount = queue.filter((requisition) => requisition.status === "APPROVED").length;
-  const isActionable = selectedRequisition?.status === "APPROVED";
 
   return (
-    <section className="grid two-column requisition-grid">
-      <article className="card">
-        <p className="section-label">Inventory queue</p>
-        <h2>Approved requisitions</h2>
-        <p className="lead">
-          Decide whether each approved request can be issued in full, partially
-          issued with procurement balance, or sent fully to procurement.
-        </p>
-
-        <div className="summary-strip">
-          <div className="summary-tile">
-            <span>Awaiting stock decision</span>
-            <strong>{pendingCount}</strong>
+    <section className="inventory-requests-page">
+      <article className="card inventory-request-toolbar">
+        <div className="card-header">
+          <div>
+            <p className="section-label">Inventory requests</p>
+            <h2 className="card-title">Requested items</h2>
+            <p className="lead">
+              Track what was requested, who requested it, and where each request currently
+              stands in approval and issuance.
+            </p>
           </div>
-          <div className="summary-tile">
-            <span>Total tracked</span>
-            <strong>{queue.length}</strong>
-          </div>
+          <span className="badge badge-blue">{filteredRequests.length} shown</span>
         </div>
-
-        {isLoadingQueue ? <p className="helper-text">Loading inventory queue...</p> : null}
-        {queueError ? <p className="form-error">{queueError}</p> : null}
-
-        {!isLoadingQueue && !queueError && !queue.length ? (
-          <div className="empty-state">
-            <strong>No approved requisitions</strong>
-            <p>Inventory work will appear here once managers approve requests.</p>
-          </div>
+        {isShowingSamples ? (
+          <p className="form-success">
+            Showing sample request cards for preview. Live requests will replace these once
+            requisitions exist.
+          </p>
         ) : null}
 
-        <div className="requisition-list">
-          {queue.map((requisition) => (
-            <button
-              key={requisition.id}
-              type="button"
-              className={
-                requisition.id === selectedRequisitionId
-                  ? "requisition-list-item active"
-                  : "requisition-list-item"
-              }
-              onClick={() => {
-                setSelectedRequisitionId(requisition.id);
-                setSubmitError("");
-                setSubmitSuccess("");
-                setNotificationPreview(null);
+        <div className="inventory-filter-grid">
+          <label className="form-group">
+            <span className="form-label">Request ID</span>
+            <input
+              className="form-input"
+              value={filters.requestId}
+              onChange={(event) => updateFilter("requestId", event.target.value)}
+              placeholder="REQ-..."
+            />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Requested by</span>
+            <input
+              className="form-input"
+              value={filters.requestedBy}
+              onChange={(event) => updateFilter("requestedBy", event.target.value)}
+              placeholder="Requestor name"
+            />
+          </label>
+          <label className="form-group">
+            <span className="form-label">Department</span>
+            <select
+              className="form-select"
+              value={filters.department}
+              onChange={(event) => updateFilter("department", event.target.value)}
+            >
+              <option value="">All departments</option>
+              {departmentOptions.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Location</span>
+            <select
+              className="form-select"
+              value={filters.location}
+              onChange={(event) => updateFilter("location", event.target.value)}
+            >
+              <option value="">All locations</option>
+              {locationOptions.map((location) => (
+                <option key={location} value={location}>
+                  {location}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Approval status</span>
+            <select
+              className="form-select"
+              value={filters.approvalStatus}
+              onChange={(event) => updateFilter("approvalStatus", event.target.value)}
+            >
+              <option value="">All approval statuses</option>
+              {approvalStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Issuance status</span>
+            <select
+              className="form-select"
+              value={filters.issuanceStatus}
+              onChange={(event) => updateFilter("issuanceStatus", event.target.value)}
+            >
+              <option value="">All issuance statuses</option>
+              {issuanceStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-group">
+            <span className="form-label">Date</span>
+            <input
+              className="form-input"
+              type="date"
+              value={filters.date}
+              onChange={(event) => updateFilter("date", event.target.value)}
+            />
+          </label>
+          <div className="inventory-filter-actions">
+            <button type="button" className="btn btn-ghost" onClick={clearFilters}>
+              Clear filters
+            </button>
+          </div>
+        </div>
+      </article>
+
+      {isLoading ? <p className="helper-text">Loading inventory requests...</p> : null}
+      {error ? <p className="form-error">{error}</p> : null}
+      {stockError ? <p className="form-error">{stockError}</p> : null}
+
+      {!isLoading && !error && !filteredRequests.length ? (
+        <article className="empty-state">
+          <strong>No requests match these filters</strong>
+          <p>Try clearing one or more filters to see more request cards.</p>
+        </article>
+      ) : null}
+
+      <div className="inventory-request-grid">
+        {filteredRequests.map((request) => {
+          const stockAvailability = findStockAvailability(request, visibleStockItems);
+          const isCapsuleOpen = stockCapsuleId === request.id;
+
+          return (
+            <article
+              key={request.id}
+              className="inventory-request-card"
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedRequest(request)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  setSelectedRequest(request);
+                }
               }}
             >
-              <div className="requisition-list-top">
-                <strong>{requisition.requisitionNumber}</strong>
-                <span className={`status-pill status-${getStatusClassName(requisition.status)}`}>
-                  {requisition.status.replaceAll("_", " ")}
+              <div className="inventory-request-card-top">
+                <div>
+                  <span className="mono">{request.requestId}</span>
+                  <h3>{request.itemName}</h3>
+                  {request.isSample ? <small className="sample-chip">Sample data</small> : null}
+                </div>
+                <span
+                  className={`status-pill status-${getStatusClassName(
+                    request.approvalStatus
+                  )}`}
+                >
+                  {request.approvalStatus}
                 </span>
               </div>
-              <p>{requisition.title}</p>
-              <div className="meta-row">
-                <span>{requisition.requester.fullName}</span>
-                <span>{requisition.itemCount} items</span>
-                <span>{formatDateTime(requisition.approvedAt)}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </article>
 
-      <article className="card">
-        <p className="section-label">Stock reference</p>
-        <h2>Available inventory</h2>
-        <p className="lead">
-          Use these on-hand balances while setting issued quantities against the
-          selected requisition.
-        </p>
-
-        {isLoadingStock ? <p className="helper-text">Loading stock list...</p> : null}
-        {stockError ? <p className="form-error">{stockError}</p> : null}
-
-        <div className="stock-list">
-          {stockItems.map((stockItem) => (
-            <div key={stockItem.id} className="stock-card">
-              <strong>{stockItem.itemName}</strong>
-              <p>{stockItem.specification || "No specification recorded."}</p>
-              <small>
-                {stockItem.sku} | On hand {stockItem.quantityOnHand} {stockItem.unit}
-              </small>
-            </div>
-          ))}
-        </div>
-      </article>
-
-      <article className="card full-span">
-        <p className="section-label">Inventory action</p>
-        <h2>Process requisition</h2>
-
-        {isLoadingDetail ? <p className="helper-text">Loading requisition detail...</p> : null}
-        {detailError ? <p className="form-error">{detailError}</p> : null}
-
-        {!isLoadingDetail && !detailError && !selectedRequisition ? (
-          <div className="empty-state">
-            <strong>No requisition selected</strong>
-            <p>Select an approved requisition from the queue to process it.</p>
-          </div>
-        ) : null}
-
-        {!isLoadingDetail && !detailError && selectedRequisition ? (
-          <div className="detail-stack">
-            <div className="detail-header">
-              <div>
-                <div className="detail-title-row">
-                  <h3>{selectedRequisition.title}</h3>
-                  <span
-                    className={`status-pill status-${getStatusClassName(
-                      selectedRequisition.status
-                    )}`}
-                  >
-                    {selectedRequisition.status.replaceAll("_", " ")}
-                  </span>
-                </div>
-                <p className="detail-id">{selectedRequisition.requisitionNumber}</p>
-              </div>
-
-              <div className="detail-metadata">
-                <div>
-                  <span>Approved</span>
-                  <strong>{formatDateTime(selectedRequisition.approvedAt)}</strong>
-                </div>
-                <div>
-                  <span>Requester</span>
-                  <strong>{selectedRequisition.requester.fullName}</strong>
-                </div>
-                <div>
-                  <span>Needed by</span>
-                  <strong>{formatDate(selectedRequisition.neededByDate)}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="detail-section">
-              <p className="section-label">Business justification</p>
-              <p className="detail-copy">{selectedRequisition.justification}</p>
-            </div>
-
-            <form className="inventory-form" onSubmit={handleSubmit}>
-              <label className="decision-label">
-                Inventory remarks
-                <textarea
-                  value={remarks}
-                  onChange={(event) => setRemarks(event.target.value)}
-                  rows={3}
-                  placeholder="Summarize the stock decision and any procurement handoff needed."
-                  disabled={!isActionable || isSubmitting}
+              <div className="inventory-request-facts">
+                <DetailField label="Request date" value={formatDate(request.requestDate)} />
+                <DetailField label="Department" value={request.department} />
+                <DetailField label="Location" value={request.location} />
+                <DetailField label="Requested by" value={request.requestedBy} />
+                <DetailField label="Item ID" value={request.itemId} />
+                <DetailField label="Item type" value={request.itemType} />
+                <DetailField
+                  label="Quantity"
+                  value={`${request.quantityRequested} ${request.unit}`}
                 />
-              </label>
-
-              <div className="inventory-line-stack">
-                {selectedRequisition.items.map((item) => {
-                  const lineState =
-                    lineStates.find((line) => line.requisitionItemId === item.id) ?? {
-                      requisitionItemId: item.id,
-                      stockItemId: "",
-                      quantityIssued: "0"
-                    };
-                  const matchingAllocation =
-                    selectedRequisition.inventoryAllocations?.find(
-                      (allocation) => allocation.requisitionItemId === item.id
-                    ) ?? null;
-
-                  return (
-                    <div key={item.id} className="item-card">
-                      <div className="detail-item-top">
-                        <strong>
-                          {item.lineNumber}. {item.description}
-                        </strong>
-                        <span>
-                          Requested {item.quantity} {item.unit}
-                        </span>
-                      </div>
-                      <p>{item.specification || "No additional specification provided."}</p>
-
-                      <div className="inventory-line-grid">
-                        <label>
-                          Stock item
-                          <select
-                            value={lineState.stockItemId}
-                            onChange={(event) =>
-                              updateLineState(item.id, "stockItemId", event.target.value)
-                            }
-                            disabled={!isActionable || isSubmitting}
-                          >
-                            <option value="">Send to procurement</option>
-                            {stockItems.map((stockItem) => (
-                              <option key={stockItem.id} value={stockItem.id}>
-                                {stockItem.sku} - {stockItem.itemName} ({stockItem.quantityOnHand}{" "}
-                                {stockItem.unit} on hand)
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label>
-                          Quantity issued
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={lineState.quantityIssued}
-                            onChange={(event) =>
-                              updateLineState(item.id, "quantityIssued", event.target.value)
-                            }
-                            disabled={!isActionable || isSubmitting}
-                          />
-                        </label>
-                      </div>
-
-                      {matchingAllocation ? (
-                        <small className="allocation-note">
-                          Resolution: {matchingAllocation.resolution.replaceAll("_", " ")} | Issued{" "}
-                          {matchingAllocation.quantityIssued} | Procurement{" "}
-                          {matchingAllocation.quantityForProcurement}
-                        </small>
-                      ) : null}
-                    </div>
-                  );
-                })}
+                <DetailField label="Issuance" value={request.issuanceStatus} />
               </div>
 
-              {submitError ? <p className="form-error">{submitError}</p> : null}
-              {submitSuccess ? <p className="form-success">{submitSuccess}</p> : null}
+              <div className="inventory-request-manager">
+                <span>Line manager</span>
+                <strong>{request.manager.fullName}</strong>
+                <small>{request.manager.email}</small>
+              </div>
 
-              {notificationPreview ? (
-                <div className="notification-preview">
-                  <strong>Notification hook</strong>
-                  <p>
-                    {notificationPreview.status} email prepared for{" "}
-                    {notificationPreview.recipientEmail}.
-                  </p>
-                  <small>{notificationPreview.subject}</small>
-                </div>
-              ) : null}
+              <p className="inventory-request-notes">
+                {request.notes || request.decisionRemarks || "No notes or remarks captured."}
+              </p>
 
-              <div className="decision-actions">
+              <div className="inventory-request-actions">
                 <button
-                  type="submit"
-                  className="secondary-button"
-                  disabled={!isActionable || isSubmitting}
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedRequest(request);
+                  }}
                 >
-                  {isSubmitting ? "Saving..." : "Process inventory decision"}
+                  View details
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setStockCapsuleId((current) => (current === request.id ? null : request.id));
+                  }}
+                >
+                  View stock
                 </button>
               </div>
 
-              {!isActionable ? (
-                <p className="helper-text">
-                  This requisition has already completed its initial inventory decision.
-                </p>
-              ) : null}
-            </form>
-
-            {selectedRequisition.inventoryAllocations?.length ? (
-              <div className="detail-section">
-                <p className="section-label">Inventory allocations</p>
-                <div className="detail-item-list">
-                  {selectedRequisition.inventoryAllocations.map((allocation) => (
-                    <div key={allocation.id} className="detail-item-card">
-                      <div className="detail-item-top">
-                        <strong>
-                          {allocation.lineNumber}. {allocation.itemDescription}
-                        </strong>
-                        <span>{allocation.resolution.replaceAll("_", " ")}</span>
-                      </div>
-                      <p>
-                        Issued {allocation.quantityIssued} | Procurement{" "}
-                        {allocation.quantityForProcurement}
-                      </p>
-                      <small>
-                        {allocation.stockSku
-                          ? `${allocation.stockSku} | ${allocation.stockItemName}`
-                          : "No stock issued"}{" "}
-                        | {allocation.processor.fullName} |{" "}
-                        {formatDateTime(allocation.processedAt)}
-                      </small>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="detail-section">
-              <p className="section-label">Workflow history</p>
-              <div className="timeline-list">
-                {selectedRequisition.approvalLogs.map((log) => (
-                  <div key={log.id} className="timeline-item">
-                    <div className="timeline-marker" />
-                    <div>
+              {isCapsuleOpen ? (
+                <div className="stock-capsule" onClick={(event) => event.stopPropagation()}>
+                  {isLoadingStock ? (
+                    <span>Checking stock...</span>
+                  ) : stockAvailability.found ? (
+                    <>
                       <strong>
-                        {log.action.replaceAll("_", " ")} by {log.actor.fullName}
+                        {stockAvailability.quantity} {stockAvailability.unit} available
                       </strong>
-                      <p>{log.remarks || "No remarks captured for this step."}</p>
-                      <small>
-                        {log.actor.role} | {formatDateTime(log.createdAt)}
-                      </small>
-                    </div>
-                  </div>
-                ))}
+                      <span>
+                        {stockAvailability.sku} | {stockAvailability.itemName}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <strong>No matching stock found</strong>
+                      <span>This item may need procurement or stock mapping.</span>
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+
+      {selectedRequest ? (
+        <div className="request-detail-overlay" role="presentation" onClick={() => setSelectedRequest(null)}>
+          <aside
+            className="request-detail-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Request details for ${selectedRequest.requestId}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="request-detail-header">
+              <div>
+                <p className="section-label">Request detail</p>
+                <h2>{selectedRequest.requestId}</h2>
+                <p>{selectedRequest.itemName}</p>
               </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedRequest(null)}>
+                Close
+              </button>
             </div>
-          </div>
-        ) : null}
-      </article>
+
+            <DetailBlock title="Requestor info">
+              <DetailField label="Name" value={selectedRequest.requestedBy} />
+              <DetailField label="Email" value={selectedRequest.requesterEmail} />
+              <DetailField label="Employee code" value={selectedRequest.requesterEmployeeCode} />
+              <DetailField label="Department" value={selectedRequest.department} />
+              <DetailField label="Location" value={selectedRequest.location} />
+              <DetailField label="Request date" value={formatDate(selectedRequest.requestDate)} />
+            </DetailBlock>
+
+            <DetailBlock title="Complete item info">
+              <DetailField label="Item ID" value={selectedRequest.itemId} />
+              <DetailField label="Item name" value={selectedRequest.itemName} />
+              <DetailField label="Item category" value={selectedRequest.itemCategory} />
+              <DetailField label="Item type" value={selectedRequest.itemType} />
+              <DetailField
+                label="Quantity requested"
+                value={`${selectedRequest.quantityRequested} ${selectedRequest.unit}`}
+              />
+              <DetailField label="Specification" value={selectedRequest.itemSpecification} />
+              <DetailField label="Notes" value={selectedRequest.notes} />
+            </DetailBlock>
+
+            <DetailBlock title="Approval info">
+              <DetailField label="Line manager" value={selectedRequest.manager.fullName} />
+              <DetailField label="Manager email" value={selectedRequest.manager.email} />
+              <DetailField label="Approval status" value={formatStatus(selectedRequest.approvalStatus)} />
+              <DetailField label="Approved at" value={formatDate(selectedRequest.approvedAt)} />
+              <DetailField label="Rejected at" value={formatDate(selectedRequest.rejectedAt)} />
+              <DetailField label="Approval remarks" value={selectedRequest.decisionRemarks} />
+            </DetailBlock>
+
+            <DetailBlock title="Issuance info">
+              <DetailField label="Issuance status" value={formatStatus(selectedRequest.issuanceStatus)} />
+              <DetailField
+                label="Issued quantity"
+                value={`${selectedRequest.issuedQuantity} ${selectedRequest.unit}`}
+              />
+              <DetailField
+                label="Procurement quantity"
+                value={`${selectedRequest.procurementQuantity} ${selectedRequest.unit}`}
+              />
+              <DetailField label="Fulfilled at" value={formatDate(selectedRequest.fulfilledAt)} />
+              <DetailField label="Inventory remarks" value={selectedRequest.inventoryRemarks} />
+              <DetailField
+                label="Mapped stock"
+                value={
+                  selectedRequest.stockItem
+                    ? `${selectedRequest.stockItem.sku} | ${selectedRequest.stockItem.itemName}`
+                    : "No stock item mapped"
+                }
+              />
+            </DetailBlock>
+          </aside>
+        </div>
+      ) : null}
     </section>
   );
 }
