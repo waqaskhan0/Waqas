@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { query } from "../config/db.js";
 import { ApiError } from "../utils/apiError.js";
 
+<<<<<<< HEAD
 const LOGIN_BYPASS_ENABLED = true;
 
 async function getDevelopmentUser() {
@@ -42,6 +43,15 @@ async function getDevelopmentUser() {
 }
 
 export const authenticate = async (req, _res, next) => {
+=======
+function inferAuditModule(path) {
+  return String(path ?? "")
+    .split("/")
+    .filter(Boolean)[1] ?? "api";
+}
+
+export const authenticate = async (req, res, next) => {
+>>>>>>> c1f5b2bc2d3fd00af2134e2513677df888304388
   try {
     const authHeader = req.headers.authorization ?? "";
     const [scheme, token] = authHeader.split(" ");
@@ -128,6 +138,39 @@ export const authenticate = async (req, _res, next) => {
       id: session.session_id,
       jti: session.token_jti
     };
+
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+      res.on("finish", () => {
+        if (res.statusCode >= 400) {
+          return;
+        }
+
+        query(
+          `
+            INSERT INTO audit_logs (
+              user_id,
+              action,
+              module,
+              ip_address,
+              metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?)
+          `,
+          [
+            req.user.id,
+            `${req.method} ${req.originalUrl}`,
+            inferAuditModule(req.originalUrl),
+            req.ip,
+            JSON.stringify({
+              params: req.params ?? {},
+              query: req.query ?? {}
+            })
+          ]
+        ).catch((auditError) => {
+          console.error("[audit-log]", auditError);
+        });
+      });
+    }
 
     next();
   } catch (error) {

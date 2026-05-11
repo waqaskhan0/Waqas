@@ -21,6 +21,8 @@ CREATE TABLE users (
   role_code VARCHAR(32) NOT NULL,
   department VARCHAR(100) NOT NULL,
   manager_id BIGINT UNSIGNED NULL,
+  basic_salary DECIMAL(14, 2) NOT NULL DEFAULT 50000.00,
+  joined_at DATE NULL,
   status ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -44,6 +46,173 @@ CREATE TABLE user_sessions (
 CREATE INDEX idx_users_role ON users(role_code);
 CREATE INDEX idx_users_manager ON users(manager_id);
 CREATE INDEX idx_sessions_user ON user_sessions(user_id);
+
+CREATE TABLE audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NULL,
+  action VARCHAR(180) NOT NULL,
+  module VARCHAR(80) NOT NULL,
+  ip_address VARCHAR(45) NULL,
+  metadata_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_audit_logs_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE system_settings (
+  setting_key VARCHAR(80) NOT NULL PRIMARY KEY,
+  setting_value JSON NOT NULL,
+  updated_by_user_id BIGINT UNSIGNED NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_system_settings_user FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+);
+
+INSERT INTO system_settings (setting_key, setting_value) VALUES
+  ('companyName', JSON_QUOTE('CompanyOS')),
+  ('currency', JSON_QUOTE('PKR')),
+  ('workingDays', JSON_ARRAY('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')),
+  ('annualLeaveDays', '20'),
+  ('sickLeaveDays', '10'),
+  ('casualLeaveDays', '5'),
+  ('maxAdvanceMonths', '6'),
+  ('maxReimbursementPerMonth', '10000');
+
+CREATE TABLE leave_balances (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  leave_type ENUM('Annual Leave', 'Sick Leave', 'Casual Leave', 'Maternity/Paternity') NOT NULL,
+  total_days DECIMAL(6, 2) NOT NULL DEFAULT 0,
+  used_days DECIMAL(6, 2) NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_leave_balances_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT uq_leave_balances_user_type UNIQUE (user_id, leave_type)
+);
+
+CREATE TABLE leave_requests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  manager_id BIGINT UNSIGNED NULL,
+  leave_type ENUM('Annual Leave', 'Sick Leave', 'Casual Leave', 'Maternity/Paternity') NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  days DECIMAL(6, 2) NOT NULL,
+  handover_person VARCHAR(120) NULL,
+  reason VARCHAR(1000) NOT NULL,
+  status ENUM('PENDING_MANAGER', 'PENDING_HR', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING_MANAGER',
+  manager_note VARCHAR(500) NULL,
+  hr_note VARCHAR(500) NULL,
+  manager_action_by BIGINT UNSIGNED NULL,
+  hr_action_by BIGINT UNSIGNED NULL,
+  manager_action_at DATETIME NULL,
+  hr_action_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_leave_requests_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_leave_requests_manager FOREIGN KEY (manager_id) REFERENCES users(id),
+  CONSTRAINT fk_leave_requests_manager_actor FOREIGN KEY (manager_action_by) REFERENCES users(id),
+  CONSTRAINT fk_leave_requests_hr_actor FOREIGN KEY (hr_action_by) REFERENCES users(id)
+);
+
+CREATE TABLE attendance (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  attendance_date DATE NOT NULL,
+  sign_in_at DATETIME NULL,
+  sign_out_at DATETIME NULL,
+  status ENUM('PRESENT', 'ABSENT', 'ON_LEAVE', 'WEEKEND') NOT NULL DEFAULT 'PRESENT',
+  source VARCHAR(40) NOT NULL DEFAULT 'SYSTEM',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_attendance_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT uq_attendance_user_date UNIQUE (user_id, attendance_date)
+);
+
+CREATE TABLE work_tasks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  column_key ENUM('TODO', 'IN_PROGRESS', 'DONE') NOT NULL DEFAULT 'TODO',
+  due_date DATE NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_work_tasks_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE advance_requests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(14, 2) NOT NULL,
+  approved_amount DECIMAL(14, 2) NULL,
+  reason VARCHAR(1000) NOT NULL,
+  repayment_months INT UNSIGNED NOT NULL DEFAULT 1,
+  status ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+  finance_note VARCHAR(500) NULL,
+  processed_by_user_id BIGINT UNSIGNED NULL,
+  processed_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_advance_requests_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_advance_requests_processor FOREIGN KEY (processed_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE reimbursement_claims (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  claim_type VARCHAR(80) NOT NULL,
+  amount DECIMAL(14, 2) NOT NULL,
+  expense_date DATE NULL,
+  description VARCHAR(1200) NOT NULL,
+  receipt_reference VARCHAR(255) NULL,
+  receipt_file_path VARCHAR(255) NULL,
+  status ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+  finance_note VARCHAR(500) NULL,
+  processed_by_user_id BIGINT UNSIGNED NULL,
+  processed_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_reimbursement_claims_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_reimbursement_claims_processor FOREIGN KEY (processed_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE announcements (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(180) NOT NULL,
+  content TEXT NOT NULL,
+  audience VARCHAR(100) NOT NULL DEFAULT 'All staff',
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_user_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_announcements_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE payroll_entries (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  payroll_month TINYINT UNSIGNED NOT NULL,
+  payroll_year SMALLINT UNSIGNED NOT NULL,
+  basic DECIMAL(14, 2) NOT NULL DEFAULT 0,
+  allowances DECIMAL(14, 2) NOT NULL DEFAULT 0,
+  deductions DECIMAL(14, 2) NOT NULL DEFAULT 0,
+  net_pay DECIMAL(14, 2) NOT NULL DEFAULT 0,
+  status ENUM('DRAFT', 'PAID') NOT NULL DEFAULT 'DRAFT',
+  paid_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_payroll_entries_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT uq_payroll_user_period UNIQUE (user_id, payroll_month, payroll_year)
+);
+
+CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX idx_audit_logs_module ON audit_logs(module);
+CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
+CREATE INDEX idx_leave_requests_user ON leave_requests(user_id);
+CREATE INDEX idx_leave_requests_manager ON leave_requests(manager_id);
+CREATE INDEX idx_leave_requests_status ON leave_requests(status);
+CREATE INDEX idx_attendance_date ON attendance(attendance_date);
+CREATE INDEX idx_work_tasks_user ON work_tasks(user_id);
+CREATE INDEX idx_advance_requests_status ON advance_requests(status);
+CREATE INDEX idx_reimbursement_claims_status ON reimbursement_claims(status);
+CREATE INDEX idx_announcements_active ON announcements(is_active, created_at);
+CREATE INDEX idx_payroll_period ON payroll_entries(payroll_year, payroll_month);
 
 CREATE TABLE requisitions (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -154,9 +323,11 @@ CREATE TABLE vendors (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   vendor_code VARCHAR(30) NOT NULL UNIQUE,
   vendor_name VARCHAR(160) NOT NULL,
+  category VARCHAR(100) NULL,
   contact_name VARCHAR(120) NULL,
   email VARCHAR(150) NULL,
   phone VARCHAR(40) NULL,
+  address VARCHAR(255) NULL,
   status ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -168,7 +339,7 @@ CREATE TABLE purchase_orders (
   requisition_id BIGINT UNSIGNED NOT NULL UNIQUE,
   vendor_id BIGINT UNSIGNED NOT NULL,
   created_by_user_id BIGINT UNSIGNED NOT NULL,
-  status ENUM('DRAFT', 'ISSUED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED') NOT NULL DEFAULT 'ISSUED',
+  status ENUM('DRAFT', 'ISSUED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'PAID', 'CANCELLED') NOT NULL DEFAULT 'ISSUED',
   order_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expected_delivery_date DATE NULL,
   subtotal_amount DECIMAL(14, 2) NOT NULL DEFAULT 0,
@@ -179,6 +350,20 @@ CREATE TABLE purchase_orders (
   CONSTRAINT fk_purchase_orders_vendor FOREIGN KEY (vendor_id) REFERENCES vendors(id),
   CONSTRAINT fk_purchase_orders_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id)
 );
+
+CREATE TABLE vendor_payments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  purchase_order_id BIGINT UNSIGNED NOT NULL,
+  paid_by_user_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(14, 2) NOT NULL,
+  payment_date DATE NOT NULL,
+  reference VARCHAR(120) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_vendor_payments_po FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id),
+  CONSTRAINT fk_vendor_payments_user FOREIGN KEY (paid_by_user_id) REFERENCES users(id)
+);
+
+CREATE INDEX idx_vendor_payments_po ON vendor_payments(purchase_order_id);
 
 CREATE TABLE purchase_order_lines (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

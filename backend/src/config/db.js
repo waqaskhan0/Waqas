@@ -28,3 +28,10 @@ export async function query(sql, params = []) {
   const [rows] = await getPool().execute(sql, params);
   return rows;
 }
+
+export async function closePool() {
+  if (pool) {
+    await pool.end();
+    pool = undefined;
+  }
+}

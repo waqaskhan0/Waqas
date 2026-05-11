@@ -2,6 +2,8 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const nodeEnv = process.env.NODE_ENV ?? "development";
+
 const required = [
   "MYSQL_HOST",
   "MYSQL_DATABASE",
@@ -15,10 +17,26 @@ for (const key of required) {
   }
 }
 
+function parseClientUrls(value) {
+  const configuredUrls = String(value ?? "")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
+
+  const developmentUrls =
+    nodeEnv === "production" ? [] : ["http://localhost:5173", "http://localhost:5174"];
+
+  const urls = Array.from(new Set([...configuredUrls, ...developmentUrls]));
+  return urls.length > 0 ? urls : ["http://localhost:5173"];
+}
+
+const clientUrls = parseClientUrls(process.env.CLIENT_URL);
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
-  nodeEnv: process.env.NODE_ENV ?? "development",
-  clientUrl: process.env.CLIENT_URL ?? "http://localhost:5173",
+  nodeEnv,
+  clientUrl: clientUrls[0],
+  clientUrls,
   mysqlHost: process.env.MYSQL_HOST,
   mysqlPort: Number(process.env.MYSQL_PORT ?? 3306),
   mysqlDatabase: process.env.MYSQL_DATABASE,

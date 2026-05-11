@@ -30,7 +30,10 @@ export function errorHandler(error, _req, res, _next) {
   }
 
   res.status(statusCode).json({
+    success: false,
     error: message,
+    message,
+    code: error.code ?? String(statusCode),
     details: error.details ?? null
   });
 }

@@ -8,6 +8,6 @@ import {
 
 export const receivingRouter = Router();
 
-receivingRouter.use(authenticate, authorizeRoles(ROLES.INVENTORY_OFFICER));
+receivingRouter.use(authenticate, authorizeRoles(ROLES.INVENTORY_OFFICER, ROLES.SUPER_ADMIN));
 receivingRouter.get("/queue", listReceivingQueueController);
 receivingRouter.post("/purchase-orders/:id/receive", receivePurchaseOrderController);

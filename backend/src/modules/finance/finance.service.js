@@ -1,7 +1,9 @@
 import { getPool, query } from "../../config/db.js";
 import { sendFinanceMatchNotification } from "../notifications/notifications.service.js";
+import { sendRoleNotification } from "../notifications/notifications.service.js";
 import { getRequisitionByIdForUser } from "../requisitions/requisitions.service.js";
 import { ApiError } from "../../utils/apiError.js";
+import { ROLES } from "../../config/roles.js";
 
 function roundMoney(value) {
   return Number(Number(value).toFixed(2));
@@ -387,4 +389,311 @@ export async function createFinanceMatch(financeUser, purchaseOrderId, payload) 
   } finally {
     connection.release();
   }
+}
+
+function mapPendingPayment(row) {
+  return {
+    id: row.id,
+    poNumber: row.po_number,
+    vendor: row.vendor_name,
+    vendorName: row.vendor_name,
+    grnReceivedAt: row.latest_grn_at,
+    totalAmount: Number(row.subtotal_amount),
+    status: row.status,
+    paymentStatus: row.payment_id ? "paid" : "pending"
+  };
+}
+
+export async function listPendingPayments() {
+  const rows = await query(
+    `
+      SELECT
+        po.id,
+        po.po_number,
+        po.status,
+        po.subtotal_amount,
+        vendor.vendor_name,
+        MAX(gr.received_at) AS latest_grn_at,
+        MAX(vp.id) AS payment_id
+      FROM purchase_orders po
+      INNER JOIN vendors vendor ON vendor.id = po.vendor_id
+      INNER JOIN goods_receipts gr ON gr.purchase_order_id = po.id
+      LEFT JOIN vendor_payments vp ON vp.purchase_order_id = po.id
+      WHERE po.status = 'RECEIVED'
+      GROUP BY po.id, po.po_number, po.status, po.subtotal_amount, vendor.vendor_name
+      HAVING payment_id IS NULL
+      ORDER BY latest_grn_at ASC, po.id ASC
+    `
+  );
+
+  return rows.map(mapPendingPayment);
+}
+
+export async function listPaymentHistory() {
+  const rows = await query(
+    `
+      SELECT
+        vp.id,
+        vp.payment_date,
+        vp.reference,
+        vp.amount,
+        po.po_number,
+        vendor.vendor_name,
+        payer.full_name AS paid_by_name
+      FROM vendor_payments vp
+      INNER JOIN purchase_orders po ON po.id = vp.purchase_order_id
+      INNER JOIN vendors vendor ON vendor.id = po.vendor_id
+      INNER JOIN users payer ON payer.id = vp.paid_by_user_id
+      ORDER BY vp.payment_date DESC, vp.id DESC
+    `
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    date: row.payment_date,
+    category: "Vendor",
+    reference: row.reference || row.po_number,
+    poNumber: row.po_number,
+    payee: row.vendor_name,
+    amount: Number(row.amount),
+    paidBy: row.paid_by_name,
+    status: "paid"
+  }));
+}
+
+export async function releasePoPayment(financeUser, purchaseOrderId, payload) {
+  const amount = Number(payload.amount);
+  const paymentDate = String(payload.paymentDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const reference = String(payload.reference ?? "").trim();
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new ApiError(400, "Payment amount must be greater than zero.");
+  }
+
+  if (!reference) {
+    throw new ApiError(400, "Payment reference is required.");
+  }
+
+  const rows = await query(
+    `
+      SELECT
+        po.id,
+        po.po_number,
+        po.status,
+        po.subtotal_amount,
+        vendor.vendor_name
+      FROM purchase_orders po
+      INNER JOIN vendors vendor ON vendor.id = po.vendor_id
+      WHERE po.id = ?
+      LIMIT 1
+    `,
+    [purchaseOrderId]
+  );
+  const po = rows[0];
+
+  if (!po) {
+    throw new ApiError(404, "Purchase order was not found.");
+  }
+
+  if (po.status !== "RECEIVED") {
+    throw new ApiError(409, "Only fully received purchase orders can be paid.");
+  }
+
+  const existing = await query(
+    `SELECT id FROM vendor_payments WHERE purchase_order_id = ? LIMIT 1`,
+    [purchaseOrderId]
+  );
+
+  if (existing[0]) {
+    throw new ApiError(409, "Payment has already been released for this purchase order.");
+  }
+
+  await query(
+    `
+      INSERT INTO vendor_payments (
+        purchase_order_id,
+        paid_by_user_id,
+        amount,
+        payment_date,
+        reference
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `,
+    [purchaseOrderId, financeUser.id, Number(amount.toFixed(2)), paymentDate, reference]
+  );
+
+  await query(`UPDATE purchase_orders SET status = 'PAID' WHERE id = ?`, [purchaseOrderId]);
+
+  await sendRoleNotification({
+    role: ROLES.PROCUREMENT_OFFICER,
+    subject: `Payment released for PO ${po.po_number}`,
+    message: `Payment of PKR ${Number(amount).toLocaleString()} released for ${po.po_number}.`,
+    eventType: "PO_PAYMENT_RELEASED",
+    entityType: "PURCHASE_ORDER",
+    entityId: purchaseOrderId,
+    triggeredByUserId: financeUser.id
+  });
+
+  return {
+    id: purchaseOrderId,
+    poNumber: po.po_number,
+    vendorName: po.vendor_name,
+    amount: Number(amount.toFixed(2)),
+    paymentDate,
+    reference,
+    status: "PAID"
+  };
+}
+
+function parsePayrollPeriod(payload) {
+  const month = Number(payload.month ?? payload.payrollMonth ?? new Date().getMonth() + 1);
+  const year = Number(payload.year ?? payload.payrollYear ?? new Date().getFullYear());
+
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new ApiError(400, "Payroll month must be between 1 and 12.");
+  }
+
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new ApiError(400, "Payroll year is invalid.");
+  }
+
+  return { month, year };
+}
+
+function mapPayroll(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    employee: row.full_name,
+    department: row.department,
+    month: row.payroll_month,
+    year: row.payroll_year,
+    basic: Number(row.basic),
+    allowances: Number(row.allowances),
+    deductions: Number(row.deductions),
+    netPay: Number(row.net_pay),
+    status: String(row.status).toLowerCase(),
+    paidAt: row.paid_at
+  };
+}
+
+export async function listPayroll(payload = {}) {
+  const { month, year } = parsePayrollPeriod(payload);
+  const rows = await query(
+    `
+      SELECT pe.*, u.full_name, u.department
+      FROM payroll_entries pe
+      INNER JOIN users u ON u.id = pe.user_id
+      WHERE pe.payroll_month = ?
+        AND pe.payroll_year = ?
+      ORDER BY u.full_name ASC
+    `,
+    [month, year]
+  );
+
+  return rows.map(mapPayroll);
+}
+
+export async function generatePayroll(payload = {}) {
+  const { month, year } = parsePayrollPeriod(payload);
+  const users = await query(
+    `
+      SELECT id, basic_salary
+      FROM users
+      WHERE status = 'ACTIVE'
+      ORDER BY full_name ASC
+    `
+  );
+
+  for (const user of users) {
+    const basic = Number(user.basic_salary ?? 50000);
+    await query(
+      `
+        INSERT INTO payroll_entries (
+          user_id,
+          payroll_month,
+          payroll_year,
+          basic,
+          allowances,
+          deductions,
+          net_pay
+        )
+        VALUES (?, ?, ?, ?, 0, 0, ?)
+        ON DUPLICATE KEY UPDATE
+          basic = basic,
+          net_pay = net_pay
+      `,
+      [user.id, month, year, basic, basic]
+    );
+  }
+
+  return listPayroll({ month, year });
+}
+
+export async function updatePayrollEntry(payrollId, payload) {
+  const basic = Number(payload.basic ?? 0);
+  const allowances = Number(payload.allowances ?? 0);
+  const deductions = Number(payload.deductions ?? 0);
+
+  if (![basic, allowances, deductions].every((value) => Number.isFinite(value) && value >= 0)) {
+    throw new ApiError(400, "Payroll amounts must be zero or greater.");
+  }
+
+  await query(
+    `
+      UPDATE payroll_entries
+      SET basic = ?,
+          allowances = ?,
+          deductions = ?,
+          net_pay = ?
+      WHERE id = ?
+    `,
+    [basic, allowances, deductions, Number((basic + allowances - deductions).toFixed(2)), payrollId]
+  );
+
+  const rows = await query(
+    `
+      SELECT pe.*, u.full_name, u.department
+      FROM payroll_entries pe
+      INNER JOIN users u ON u.id = pe.user_id
+      WHERE pe.id = ?
+      LIMIT 1
+    `,
+    [payrollId]
+  );
+
+  if (!rows[0]) {
+    throw new ApiError(404, "Payroll entry was not found.");
+  }
+
+  return mapPayroll(rows[0]);
+}
+
+export async function markPayrollPaid(payrollId) {
+  await query(
+    `
+      UPDATE payroll_entries
+      SET status = 'PAID',
+          paid_at = NOW()
+      WHERE id = ?
+    `,
+    [payrollId]
+  );
+
+  const rows = await query(
+    `
+      SELECT pe.*, u.full_name, u.department
+      FROM payroll_entries pe
+      INNER JOIN users u ON u.id = pe.user_id
+      WHERE pe.id = ?
+      LIMIT 1
+    `,
+    [payrollId]
+  );
+
+  if (!rows[0]) {
+    throw new ApiError(404, "Payroll entry was not found.");
+  }
+
+  return mapPayroll(rows[0]);
 }

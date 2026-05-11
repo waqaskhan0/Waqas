@@ -2,6 +2,53 @@ import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
+const defaultPassword = "Password123!";
+
+const demoAccounts = [
+  {
+    role: "EMPLOYEE",
+    label: "Employee",
+    name: "Ayaan Employee",
+    email: "employee@ims.local"
+  },
+  {
+    role: "LINE_MANAGER",
+    label: "Line Manager",
+    name: "Layla Manager",
+    email: "manager@ims.local"
+  },
+  {
+    role: "INVENTORY_OFFICER",
+    label: "Inventory Officer",
+    name: "Inaya Inventory",
+    email: "inventory@ims.local"
+  },
+  {
+    role: "PROCUREMENT_OFFICER",
+    label: "Procurement Officer",
+    name: "Omar Procurement",
+    email: "procurement@ims.local"
+  },
+  {
+    role: "FINANCE",
+    label: "Finance",
+    name: "Sara Finance",
+    email: "finance@ims.local"
+  },
+  {
+    role: "HR_OFFICER",
+    label: "HR Officer",
+    name: "Nadia HR",
+    email: "hr@ims.local"
+  },
+  {
+    role: "SUPER_ADMIN",
+    label: "Super Admin",
+    name: "Super Admin",
+    email: "admin@ims.local"
+  }
+];
+
 export function LoginPage() {
   const { isAuthenticated, signIn } = useAuth();
   const [formValues, setFormValues] = useState({
