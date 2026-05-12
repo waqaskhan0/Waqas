@@ -100,23 +100,6 @@ function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }
 
-function formatDateTime(value) {
-  if (!value) {
-    return "Pending";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(date);
-}
-
 function getStatusClassName(status) {
   return String(status ?? "SUBMITTED").toLowerCase().replaceAll("_", "-");
 }
@@ -283,6 +266,15 @@ function buildRequisitionPayload(formValues) {
       2000
     ),
     neededByDate: formValues.requestDate || null,
+    requestContext: {
+      requesterName: formValues.requesterName,
+      department: formValues.department,
+      location: formValues.location,
+      requestDate: formValues.requestDate,
+      lineManagerEmail: formValues.lineManagerEmail,
+      ccEmails: formValues.ccEmails.map((email) => email.trim()).filter(Boolean),
+      selectedCategory: formValues.selectedCategory
+    },
     items: validRows.map((row) =>
       isTransportationCategory(formValues.selectedCategory)
         ? buildTransportPayloadItem(row)
@@ -291,7 +283,64 @@ function buildRequisitionPayload(formValues) {
   };
 }
 
-export function EmployeeRequisitionWorkspace({ token }) {
+const PENDING_REQUISITION_STATUSES = new Set([
+  "DRAFT",
+  "SUBMITTED"
+]);
+
+function getApprovalStatus(status) {
+  if (status === "REJECTED") {
+    return "Rejected";
+  }
+
+  if (
+    [
+      "APPROVED",
+      "PARTIALLY_FULFILLED",
+      "PROCUREMENT_PENDING",
+      "FULFILLED"
+    ].includes(status)
+  ) {
+    return "Approved";
+  }
+
+  return "Pending";
+}
+
+const requisitionSectionConfig = {
+  dashboard: {
+    label: "Requisition Dashboard",
+    title: "Requisition overview",
+    description: "Track total requests, pending work, approvals, rejections, and recent activity."
+  },
+  my: {
+    label: "My Requests",
+    title: "Requests submitted by you",
+    description: "Review every requisition you have created and open the full request detail."
+  },
+  approvals: {
+    label: "Approvals",
+    title: "Approval status",
+    description: "Review pending, approved, and rejected requisitions in one place."
+  },
+  history: {
+    label: "Requisition History",
+    title: "Complete requisition history",
+    description: "A full activity log of requisitions and workflow events available to you."
+  }
+};
+
+function getRequisitionFilter(section) {
+  if (section === "approvals") {
+    return (requisition) => ["Pending", "Approved", "Rejected"].includes(
+      getApprovalStatus(requisition.status)
+    );
+  }
+
+  return () => true;
+}
+
+export function EmployeeRequisitionWorkspace({ token, section = "new", onNavigate }) {
   const { user } = useAuth();
   const datalistBaseId = useId().replaceAll(":", "");
 
@@ -305,11 +354,9 @@ export function EmployeeRequisitionWorkspace({ token }) {
   const [managerOptions, setManagerOptions] = useState([]);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [listError, setListError] = useState("");
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [detailError, setDetailError] = useState("");
   const [requisitions, setRequisitions] = useState([]);
   const [selectedRequisitionId, setSelectedRequisitionId] = useState(null);
-  const [selectedRequisition, setSelectedRequisition] = useState(null);
+  const [approvalFilter, setApprovalFilter] = useState("all");
 
   useEffect(() => {
     let ignore = false;
@@ -412,42 +459,6 @@ export function EmployeeRequisitionWorkspace({ token }) {
     };
   }, [token]);
 
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadRequisitionDetail() {
-      if (!selectedRequisitionId) {
-        setSelectedRequisition(null);
-        return;
-      }
-
-      setIsLoadingDetail(true);
-      setDetailError("");
-
-      try {
-        const response = await apiClient.getRequisitionById(token, selectedRequisitionId);
-
-        if (!ignore) {
-          setSelectedRequisition(response.requisition);
-        }
-      } catch (error) {
-        if (!ignore) {
-          setDetailError(error.message);
-        }
-      } finally {
-        if (!ignore) {
-          setIsLoadingDetail(false);
-        }
-      }
-    }
-
-    loadRequisitionDetail();
-
-    return () => {
-      ignore = true;
-    };
-  }, [selectedRequisitionId, token]);
-
   const departmentOptions = uniqueValues([...DEPARTMENT_OPTIONS, formValues.department]);
   const lineManagerOptions = uniqueValues([
     ...managerOptions.map((manager) => manager.email),
@@ -459,6 +470,31 @@ export function EmployeeRequisitionWorkspace({ token }) {
   const itemsStepDescription = isTransportationCategory(formValues.selectedCategory)
     ? "Choose the correct transport request type based on your purpose. Please submit transportation requests at least 2 days in advance."
     : "Choose a category first, then select an item. Only the categories allowed for the selected department will appear, and the type list will update based on the item you choose.";
+  const normalizedSection = section === "employee-requests" ? "new" : section;
+  const showNewRequisition = normalizedSection === "new";
+  const showDashboard = normalizedSection === "dashboard";
+  const showApprovals = normalizedSection === "approvals";
+  const showRequestList = !showNewRequisition;
+  const sectionConfig =
+    requisitionSectionConfig[normalizedSection] ?? requisitionSectionConfig.my;
+  const filteredRequisitions = requisitions.filter(getRequisitionFilter(normalizedSection));
+  const approvalRequisitions = filteredRequisitions.filter((requisition) => {
+    if (!showApprovals || approvalFilter === "all") {
+      return true;
+    }
+
+    return getApprovalStatus(requisition.status).toLowerCase() === approvalFilter;
+  });
+  const displayedRequisitions = showApprovals ? approvalRequisitions : filteredRequisitions;
+  const recentRequisitions = requisitions.slice(0, 5);
+  const dashboardSummary = {
+    total: requisitions.length,
+    pending: requisitions.filter((requisition) =>
+      getApprovalStatus(requisition.status) === "Pending"
+    ).length,
+    approved: requisitions.filter((requisition) => getApprovalStatus(requisition.status) === "Approved").length,
+    rejected: requisitions.filter((requisition) => getApprovalStatus(requisition.status) === "Rejected").length
+  };
 
   function updateTopLevelField(field, value) {
     setFormValues((current) => ({
@@ -646,7 +682,6 @@ export function EmployeeRequisitionWorkspace({ token }) {
         buildRequisitionSummary(created),
         ...current.filter((requisition) => requisition.id !== created.id)
       ]);
-      setSelectedRequisition(created);
       setSelectedRequisitionId(created.id);
       setActiveStep("success");
     } catch (error) {
@@ -658,7 +693,190 @@ export function EmployeeRequisitionWorkspace({ token }) {
 
   return (
     <section className="grid two-column requisition-grid">
-      <article className="card">
+      {showDashboard ? (
+        <article className="card full-span">
+          <p className="section-label">{sectionConfig.label}</p>
+          <h2>{sectionConfig.title}</h2>
+          <p className="lead">{sectionConfig.description}</p>
+
+          <div className="summary-strip requisition-summary-strip">
+            <button
+              type="button"
+              className="summary-tile tile-button"
+              onClick={() => onNavigate?.("my-requisitions")}
+            >
+              <span>Total requests</span>
+              <strong>{dashboardSummary.total}</strong>
+            </button>
+            <button
+              type="button"
+              className="summary-tile tile-button"
+              onClick={() => onNavigate?.("requisition-approvals")}
+            >
+              <span>Pending</span>
+              <strong>{dashboardSummary.pending}</strong>
+            </button>
+            <button
+              type="button"
+              className="summary-tile tile-button"
+              onClick={() => onNavigate?.("requisition-approvals")}
+            >
+              <span>Approved</span>
+              <strong>{dashboardSummary.approved}</strong>
+            </button>
+            <button
+              type="button"
+              className="summary-tile tile-button"
+              onClick={() => onNavigate?.("requisition-approvals")}
+            >
+              <span>Rejected</span>
+              <strong>{dashboardSummary.rejected}</strong>
+            </button>
+          </div>
+
+          <div className="card-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onNavigate?.("new-requisition")}
+            >
+              New Requisition
+            </button>
+          </div>
+        </article>
+      ) : null}
+
+      {showRequestList ? (
+        <article className="card full-span">
+          <p className="section-label">{sectionConfig.label}</p>
+          <h2>{showDashboard ? "Recent requests" : sectionConfig.title}</h2>
+          <p className="lead">
+            {showDashboard ? "Your latest requisition activity." : sectionConfig.description}
+          </p>
+
+          {isLoadingList ? <p className="helper-text">Loading requisitions...</p> : null}
+          {listError ? <p className="form-error">{listError}</p> : null}
+
+          {showApprovals ? (
+            <div className="approval-filter-bar" aria-label="Approval status filters">
+              {[
+                ["all", "All", filteredRequisitions.length],
+                [
+                  "pending",
+                  "Pending",
+                  filteredRequisitions.filter(
+                    (requisition) => getApprovalStatus(requisition.status) === "Pending"
+                  ).length
+                ],
+                [
+                  "approved",
+                  "Approved",
+                  filteredRequisitions.filter(
+                    (requisition) => getApprovalStatus(requisition.status) === "Approved"
+                  ).length
+                ],
+                [
+                  "rejected",
+                  "Rejected",
+                  filteredRequisitions.filter(
+                    (requisition) => getApprovalStatus(requisition.status) === "Rejected"
+                  ).length
+                ]
+              ].map(([filter, label, count]) => (
+                <button
+                  key={filter}
+                  type="button"
+                  className={
+                    approvalFilter === filter
+                      ? "approval-filter-button active"
+                      : "approval-filter-button"
+                  }
+                  onClick={() => setApprovalFilter(filter)}
+                >
+                  <span>{label}</span>
+                  <strong>{count}</strong>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {!isLoadingList && !listError && !displayedRequisitions.length ? (
+            <div className="empty-state">
+              <strong>No requisitions found</strong>
+              <p>This section will update as matching requisitions are created.</p>
+            </div>
+          ) : null}
+
+          {showApprovals ? (
+            <div className="approval-tile-grid">
+              {displayedRequisitions.map((requisition) => {
+                const approvalStatus = getApprovalStatus(requisition.status);
+
+                return (
+                  <button
+                    key={requisition.id}
+                    type="button"
+                    className={
+                      requisition.id === selectedRequisitionId
+                        ? "approval-request-tile active"
+                        : "approval-request-tile"
+                    }
+                    onClick={() => setSelectedRequisitionId(requisition.id)}
+                  >
+                    <div className="requisition-list-top">
+                      <strong>{requisition.requisitionNumber}</strong>
+                      <span
+                        className={`status-pill status-${getStatusClassName(
+                          approvalStatus
+                        )}`}
+                      >
+                        {approvalStatus}
+                      </span>
+                    </div>
+                    <p>{requisition.title}</p>
+                    <div className="meta-row">
+                      <span>{requisition.itemCount} items</span>
+                      <span>Manager: {requisition.manager.fullName}</span>
+                      <span>{formatDate(requisition.submittedAt)}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="requisition-list">
+              {(showDashboard ? recentRequisitions : displayedRequisitions).map((requisition) => (
+                <button
+                  key={requisition.id}
+                  type="button"
+                  className={
+                    requisition.id === selectedRequisitionId
+                      ? "requisition-list-item active"
+                      : "requisition-list-item"
+                  }
+                  onClick={() => setSelectedRequisitionId(requisition.id)}
+                >
+                  <div className="requisition-list-top">
+                    <strong>{requisition.requisitionNumber}</strong>
+                    <span className={`status-pill status-${getStatusClassName(requisition.status)}`}>
+                      {requisition.status.replaceAll("_", " ")}
+                    </span>
+                  </div>
+                  <p>{requisition.title}</p>
+                  <div className="meta-row">
+                    <span>{requisition.itemCount} items</span>
+                    <span>{requisition.totalQuantity} total qty</span>
+                    <span>{formatDate(requisition.submittedAt)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </article>
+      ) : null}
+
+      {showNewRequisition ? (
+      <article className="card full-span">
         <div className="employee-request-shell">
           <div className="employee-request-logo">
             <img src="/assets/shehersaaz-logo.png" alt="Organization logo" />
@@ -1219,152 +1437,8 @@ export function EmployeeRequisitionWorkspace({ token }) {
           </p>
         ) : null}
       </article>
+      ) : null}
 
-      <article className="card">
-        <p className="section-label">My queue</p>
-        <h2>Submitted requisitions</h2>
-        <p className="lead">
-          Review what you have already sent, check status, and reopen details anytime.
-        </p>
-
-        {isLoadingList ? <p className="helper-text">Loading your requisitions...</p> : null}
-        {listError ? <p className="form-error">{listError}</p> : null}
-
-        {!isLoadingList && !listError && !requisitions.length ? (
-          <div className="empty-state">
-            <strong>No requisitions yet</strong>
-            <p>Your submitted requests will appear here once Module 2 receives its first record.</p>
-          </div>
-        ) : null}
-
-        <div className="requisition-list">
-          {requisitions.map((requisition) => (
-            <button
-              key={requisition.id}
-              type="button"
-              className={
-                requisition.id === selectedRequisitionId
-                  ? "requisition-list-item active"
-                  : "requisition-list-item"
-              }
-              onClick={() => setSelectedRequisitionId(requisition.id)}
-            >
-              <div className="requisition-list-top">
-                <strong>{requisition.requisitionNumber}</strong>
-                <span className={`status-pill status-${getStatusClassName(requisition.status)}`}>
-                  {requisition.status.replaceAll("_", " ")}
-                </span>
-              </div>
-              <p>{requisition.title}</p>
-              <div className="meta-row">
-                <span>{requisition.itemCount} items</span>
-                <span>Qty {requisition.totalQuantity}</span>
-                <span>{formatDate(requisition.submittedAt)}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </article>
-
-      <article className="card full-span">
-        <p className="section-label">Selected requisition</p>
-        <h2>Request detail</h2>
-
-        {isLoadingDetail ? <p className="helper-text">Loading requisition detail...</p> : null}
-        {detailError ? <p className="form-error">{detailError}</p> : null}
-
-        {!isLoadingDetail && !detailError && !selectedRequisition ? (
-          <div className="empty-state">
-            <strong>No requisition selected</strong>
-            <p>Choose a request from the right-hand list to inspect its full detail.</p>
-          </div>
-        ) : null}
-
-        {!isLoadingDetail && !detailError && selectedRequisition ? (
-          <div className="detail-stack">
-            <div className="detail-header">
-              <div>
-                <div className="detail-title-row">
-                  <h3>{selectedRequisition.title}</h3>
-                  <span
-                    className={`status-pill status-${getStatusClassName(
-                      selectedRequisition.status
-                    )}`}
-                  >
-                    {selectedRequisition.status.replaceAll("_", " ")}
-                  </span>
-                </div>
-                <p className="detail-id">{selectedRequisition.requisitionNumber}</p>
-              </div>
-
-              <div className="detail-metadata">
-                <div>
-                  <span>Submitted</span>
-                  <strong>{formatDateTime(selectedRequisition.submittedAt)}</strong>
-                </div>
-                <div>
-                  <span>Needed by</span>
-                  <strong>{formatDate(selectedRequisition.neededByDate)}</strong>
-                </div>
-                <div>
-                  <span>Manager</span>
-                  <strong>{selectedRequisition.manager.fullName}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="detail-section">
-              <p className="section-label">Justification</p>
-              <p className="detail-copy">{selectedRequisition.justification}</p>
-            </div>
-
-            <div className="detail-section">
-              <p className="section-label">Items</p>
-              <div className="detail-item-list">
-                {selectedRequisition.items.map((item) => (
-                  <div key={item.id} className="detail-item-card">
-                    <div className="detail-item-top">
-                      <strong>
-                        {item.lineNumber}. {item.description}
-                      </strong>
-                      <span>
-                        {item.quantity} {item.unit}
-                      </span>
-                    </div>
-                    <p>{item.specification || "No additional specification provided."}</p>
-                    <small>
-                      Estimated unit cost:{" "}
-                      {item.estimatedUnitCost === null
-                        ? "Not provided"
-                        : item.estimatedUnitCost.toFixed(2)}
-                    </small>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="detail-section">
-              <p className="section-label">Approval trail</p>
-              <div className="timeline-list">
-                {selectedRequisition.approvalLogs.map((log) => (
-                  <div key={log.id} className="timeline-item">
-                    <div className="timeline-marker" />
-                    <div>
-                      <strong>
-                        {log.action.replaceAll("_", " ")} by {log.actor.fullName}
-                      </strong>
-                      <p>{log.remarks || "No remarks captured for this step."}</p>
-                      <small>
-                        {log.actor.role} | {formatDateTime(log.createdAt)}
-                      </small>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </article>
     </section>
   );
 }

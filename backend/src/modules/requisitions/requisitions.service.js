@@ -634,6 +634,96 @@ export async function createRequisition(user, payload) {
   }
 }
 
+export async function createDraftRequisition(user, payload) {
+  if (!user.managerId) {
+    throw new ApiError(
+      400,
+      "Your account is not assigned to a line manager yet. A draft still needs routing details."
+    );
+  }
+
+  const pool = getPool();
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const requisitionNumber = buildRequisitionNumber();
+    const [result] = await connection.execute(
+      `
+        INSERT INTO requisitions (
+          requisition_number,
+          requested_by_user_id,
+          manager_id,
+          title,
+          justification,
+          status,
+          needed_by_date
+        )
+        VALUES (?, ?, ?, ?, ?, 'DRAFT', ?)
+      `,
+      [
+        requisitionNumber,
+        user.id,
+        user.managerId,
+        payload.title,
+        payload.justification,
+        payload.neededByDate
+      ]
+    );
+
+    const requisitionId = result.insertId;
+
+    for (const [index, item] of payload.items.entries()) {
+      await connection.execute(
+        `
+          INSERT INTO requisition_items (
+            requisition_id,
+            line_number,
+            item_description,
+            specification,
+            quantity_requested,
+            unit,
+            estimated_unit_cost
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          requisitionId,
+          index + 1,
+          item.description,
+          item.specification,
+          item.quantity,
+          item.unit,
+          item.estimatedUnitCost
+        ]
+      );
+    }
+
+    await connection.commit();
+
+    const requisition = await getRequisitionByIdForUser(requisitionId, user);
+
+    return {
+      requisition,
+      staging: {
+        status: "DRAFT",
+        message: "Requisition saved as a staging draft. It has not been sent for approval."
+      }
+    };
+  } catch (error) {
+    await connection.rollback();
+
+    if (error.code === "ER_DUP_ENTRY") {
+      throw new ApiError(409, "A requisition number collision occurred. Please retry.");
+    }
+
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function listMyRequisitions(userId) {
   const rows = await query(
     `
@@ -699,6 +789,7 @@ export async function listManagerRequisitions(managerUser) {
       INNER JOIN users requester ON requester.id = r.requested_by_user_id
       LEFT JOIN requisition_items ri ON ri.requisition_id = r.id
       WHERE ${managerWhereClause}
+        AND r.status <> 'DRAFT'
       GROUP BY
         r.id,
         r.requisition_number,

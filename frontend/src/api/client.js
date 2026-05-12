@@ -69,6 +69,15 @@ export const apiClient = {
       }
     });
   },
+  createDraftRequisition(token, payload) {
+    return request("/requisitions/drafts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  },
   listMyRequisitions(token) {
     return request("/requisitions/my", {
       headers: {

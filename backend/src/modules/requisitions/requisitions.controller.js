@@ -1,6 +1,7 @@
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import {
   approveRequisition,
+  createDraftRequisition,
   createRequisition,
   getRequisitionByIdForUser,
   listManagerRequisitions,
@@ -9,6 +10,7 @@ import {
 } from "./requisitions.service.js";
 import {
   parseApprovalDecisionPayload,
+  parseCreateDraftRequisitionPayload,
   parseCreateRequisitionPayload
 } from "./requisitions.validation.js";
 
@@ -25,6 +27,13 @@ function parseRequisitionId(value) {
 export const createRequisitionController = asyncHandler(async (req, res) => {
   const payload = parseCreateRequisitionPayload(req.body);
   const result = await createRequisition(req.user, payload);
+
+  res.status(201).json(result);
+});
+
+export const createDraftRequisitionController = asyncHandler(async (req, res) => {
+  const payload = parseCreateDraftRequisitionPayload(req.body);
+  const result = await createDraftRequisition(req.user, payload);
 
   res.status(201).json(result);
 });

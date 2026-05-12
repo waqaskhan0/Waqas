@@ -3,6 +3,7 @@ import { ROLES } from "../../config/roles.js";
 import { authenticate, authorizeRoles } from "../../middleware/auth.js";
 import {
   approveRequisitionController,
+  createDraftRequisitionController,
   createRequisitionController,
   getRequisitionController,
   listManagerRequisitionsController,
@@ -19,6 +20,7 @@ requisitionsRouter.get(
   listManagerRequisitionsController
 );
 requisitionsRouter.get("/my", listMyRequisitionsController);
+requisitionsRouter.post("/drafts", createDraftRequisitionController);
 requisitionsRouter.post(
   "/:id/approve",
   authorizeRoles(ROLES.LINE_MANAGER),

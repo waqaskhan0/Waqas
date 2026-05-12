@@ -166,11 +166,13 @@ const moduleCatalog = [
     title: "Requisitions",
     summary: "Create requests, review approvals, and inspect request history.",
     accent: "teal",
-    defaultPanel: "employee-requests",
+    defaultPanel: "requisition-dashboard",
     nav: [
-      { icon: "RQ", label: "My Requisitions", panel: "employee-requests" },
-      { icon: "AP", label: "Pending Approvals", panel: "manager-approvals", badge: 2 },
-      { icon: "AR", label: "All Requests", panel: "all-requests" }
+      { icon: "DS", label: "Requisition Dashboard", panel: "requisition-dashboard" },
+      { icon: "NR", label: "New Requisition", panel: "new-requisition" },
+      { icon: "MR", label: "My Requests", panel: "my-requisitions" },
+      { icon: "AP", label: "Approvals", panel: "requisition-approvals" },
+      { icon: "RH", label: "Requisition History", panel: "requisition-history" }
     ]
   },
   {
@@ -2060,11 +2062,21 @@ export function DashboardPage() {
       case "admin-overview":
         return <AdminOverviewPanel demo={demo} onNavigate={navigate} />;
       case "employee-requests":
-        return user.role === "EMPLOYEE" || user.isDevelopmentBypass ? (
+        return isBackendSession ? (
           <EmployeeRequisitionWorkspace token={token} />
         ) : (
           <LocalRequestsPanel demo={demo} onOpenModal={setModal} onNavigate={navigate} />
         );
+      case "requisition-dashboard":
+        return <EmployeeRequisitionWorkspace token={token} section="dashboard" onNavigate={navigate} />;
+      case "new-requisition":
+        return <EmployeeRequisitionWorkspace token={token} section="new" />;
+      case "my-requisitions":
+        return <EmployeeRequisitionWorkspace token={token} section="my" />;
+      case "requisition-approvals":
+        return <EmployeeRequisitionWorkspace token={token} section="approvals" />;
+      case "requisition-history":
+        return <EmployeeRequisitionWorkspace token={token} section="history" />;
       case "inventory-dashboard":
         return (
           <InventoryDashboardPanel
@@ -2368,9 +2380,18 @@ export function DashboardPage() {
       <aside className={isSidebarCollapsed ? "sidebar collapsed" : "sidebar"}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            Shehersaaz<span>IMS</span>
+            <img
+              className="sidebar-logo-full"
+              src="/assets/shehersaaz-logo.png"
+              alt="Shehersaaz"
+            />
+            <img
+              className="sidebar-logo-mark"
+              src="/assets/shehersaaz-logo.png"
+              alt="SS"
+              aria-hidden="true"
+            />
           </div>
-          <small>Enterprise workflow system</small>
           <button
             type="button"
             className="sidebar-toggle"

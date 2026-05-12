@@ -222,6 +222,7 @@ CREATE TABLE requisitions (
   title VARCHAR(150) NOT NULL,
   justification TEXT NOT NULL,
   status ENUM(
+    'DRAFT',
     'SUBMITTED',
     'APPROVED',
     'REJECTED',

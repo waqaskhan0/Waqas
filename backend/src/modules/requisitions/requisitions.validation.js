@@ -24,6 +24,74 @@ function parsePositiveNumber(value, fieldName) {
   return Number(parsed.toFixed(2));
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? "").trim());
+}
+
+function parseRequestContext(payload) {
+  const context = payload.requestContext ?? {};
+  const requesterName = String(context.requesterName ?? "").trim();
+  const department = String(context.department ?? "").trim();
+  const location = String(context.location ?? "").trim();
+  const requestDate = String(context.requestDate ?? "").trim();
+  const lineManagerEmail = String(context.lineManagerEmail ?? "").trim();
+  const selectedCategory = String(context.selectedCategory ?? "").trim();
+  const ccEmails = Array.isArray(context.ccEmails) ? context.ccEmails : [];
+
+  if (!requesterName || requesterName.length > 120) {
+    throw new ApiError(400, "Requester name is required and must be 120 characters or fewer.");
+  }
+
+  if (!department || department.length > 80) {
+    throw new ApiError(400, "Department is required and must be 80 characters or fewer.");
+  }
+
+  if (!location || location.length > 80) {
+    throw new ApiError(400, "Location is required and must be 80 characters or fewer.");
+  }
+
+  if (!lineManagerEmail || !isValidEmail(lineManagerEmail)) {
+    throw new ApiError(400, "A valid line manager email is required.");
+  }
+
+  const parsedCcEmails = ccEmails
+    .map((email) => String(email ?? "").trim())
+    .filter(Boolean);
+
+  if (parsedCcEmails.some((email) => !isValidEmail(email))) {
+    throw new ApiError(400, "CC emails must be valid email addresses.");
+  }
+
+  if (parsedCcEmails.length > 10) {
+    throw new ApiError(400, "A requisition can include up to 10 CC emails.");
+  }
+
+  if (!selectedCategory || selectedCategory.length > 80) {
+    throw new ApiError(400, "A request category is required.");
+  }
+
+  let normalizedRequestDate = null;
+  if (requestDate) {
+    const parsedDate = new Date(`${requestDate}T00:00:00`);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new ApiError(400, "Request date must be a valid date.");
+    }
+
+    normalizedRequestDate = requestDate;
+  }
+
+  return {
+    requesterName,
+    department,
+    location,
+    requestDate: normalizedRequestDate,
+    lineManagerEmail,
+    ccEmails: parsedCcEmails,
+    selectedCategory
+  };
+}
+
 export function parseCreateRequisitionPayload(payload) {
   const title = String(payload.title ?? "").trim();
   const justification = String(payload.justification ?? "").trim();
@@ -94,6 +162,13 @@ export function parseCreateRequisitionPayload(payload) {
           : null
       };
     })
+  };
+}
+
+export function parseCreateDraftRequisitionPayload(payload) {
+  return {
+    ...parseCreateRequisitionPayload(payload),
+    requestContext: parseRequestContext(payload)
   };
 }
 

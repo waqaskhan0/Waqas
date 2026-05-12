@@ -661,6 +661,7 @@ export async function listInventoryRequests() {
       INNER JOIN requisition_items ri ON ri.requisition_id = r.id
       LEFT JOIN inventory_allocations ia ON ia.requisition_item_id = ri.id
       LEFT JOIN inventory_stock stock ON stock.id = ia.stock_item_id
+      WHERE r.status <> 'DRAFT'
       ORDER BY r.submitted_at DESC, r.id DESC, ri.line_number ASC
     `
   );
@@ -679,6 +680,7 @@ export async function getInventoryDashboard() {
             SUM(CASE WHEN status IN ('APPROVED', 'PROCUREMENT_PENDING', 'PARTIALLY_FULFILLED', 'FULFILLED') THEN 1 ELSE 0 END) AS approved_requests,
             SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_requests
           FROM requisitions
+          WHERE status <> 'DRAFT'
         `
       ),
       query(
@@ -715,6 +717,7 @@ export async function getInventoryDashboard() {
             END AS issuance_status
           FROM requisitions r
           INNER JOIN users requester ON requester.id = r.requested_by_user_id
+          WHERE r.status <> 'DRAFT'
           ORDER BY r.submitted_at DESC, r.id DESC
           LIMIT 8
         `

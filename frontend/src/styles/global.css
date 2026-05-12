@@ -158,15 +158,13 @@ img {
   letter-spacing: 0;
 }
 
-.login-logo span,
-.sidebar-logo span {
+.login-logo span {
   color: var(--primary-strong);
 }
 
 .login-subtitle,
 .login-hint,
-.topbar p,
-.sidebar-header small {
+.topbar p {
   color: var(--text2);
 }
 
@@ -303,8 +301,10 @@ img {
 }
 
 .erp-shell {
+  height: 100vh;
   min-height: 100vh;
   display: flex;
+  overflow: hidden;
   background: var(--bg);
 }
 
@@ -314,10 +314,13 @@ img {
 
 .sidebar {
   width: var(--sidebar-w);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   flex: 0 0 var(--sidebar-w);
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 0;
   border-right: 1px solid var(--border);
   background: var(--bg2);
   transition:
@@ -332,18 +335,38 @@ img {
 
 .sidebar-header {
   position: relative;
-  padding: 20px 20px 16px;
+  padding: 18px 20px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .sidebar.collapsed .sidebar-header {
-  padding: 14px 10px 10px;
+  padding: 14px 10px 12px;
 }
 
 .sidebar-logo {
-  color: var(--text);
-  font-size: 1rem;
-  font-weight: 850;
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-logo img {
+  display: block;
+}
+
+.sidebar-logo-full {
+  width: min(178px, 100%);
+  height: auto;
+}
+
+.sidebar-logo-mark {
+  display: none;
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  object-position: left top;
+  border-radius: 10px;
+  background: #fff;
 }
 
 .sidebar-toggle {
@@ -370,6 +393,19 @@ img {
 
 .sidebar.collapsed .sidebar-toggle {
   margin: 0 auto;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  min-height: 44px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-logo-full {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-logo-mark {
+  display: block;
 }
 
 .sidebar-user {
@@ -496,8 +532,6 @@ img {
   border-top: 1px solid var(--border);
 }
 
-.sidebar.collapsed .sidebar-logo,
-.sidebar.collapsed .sidebar-header small,
 .sidebar.collapsed .sidebar-user > div:not(.avatar),
 .sidebar.collapsed .nav-section,
 .sidebar.collapsed .nav-label,
@@ -568,13 +602,16 @@ img {
 
 .main {
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100vh;
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
+  flex: 0 0 auto;
   min-height: 70px;
   display: flex;
   align-items: center;
@@ -584,8 +621,6 @@ img {
   border-bottom: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(14px);
-  position: sticky;
-  top: 0;
   z-index: 20;
 }
 
@@ -677,6 +712,7 @@ img {
 
 .content {
   flex: 1;
+  min-height: 0;
   padding: 28px;
   overflow: auto;
   animation: contentFade 0.24s ease;
@@ -1342,6 +1378,7 @@ tbody tr:hover td {
 }
 
 .badge-amber,
+.status-pending,
 .status-pending-manager-approval,
 .status-awaiting-inventory,
 .status-partially-issued,
@@ -1352,6 +1389,7 @@ tbody tr:hover td {
 }
 
 .badge-blue,
+.status-draft,
 .status-submitted,
 .status-unread,
 .status-issued {
@@ -1381,6 +1419,10 @@ tbody tr:hover td {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin: 10px 0;
+}
+
+.requisition-summary-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .summary-tile,
@@ -2112,6 +2154,120 @@ tbody tr:hover td {
   margin-top: 14px;
 }
 
+.requisition-status-table {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.requisition-status-row {
+  width: 100%;
+  min-width: 760px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(90px, 0.6fr) minmax(160px, 1fr) minmax(120px, 0.7fr) minmax(130px, 0.8fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--text);
+  text-align: left;
+}
+
+.requisition-status-row.header {
+  min-height: 36px;
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.requisition-status-row:not(.header):hover,
+.requisition-status-row.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.requisition-status-row strong,
+.requisition-status-row small {
+  display: block;
+}
+
+.requisition-status-row small {
+  margin-top: 3px;
+  color: var(--text2);
+  line-height: 1.35;
+}
+
+.approval-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.approval-filter-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg3);
+  color: var(--text2);
+  text-align: left;
+  font-weight: 850;
+}
+
+.approval-filter-button.active,
+.approval-filter-button:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.approval-filter-button strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.approval-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.approval-request-tile {
+  display: grid;
+  gap: 10px;
+  min-height: 138px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--text);
+  text-align: left;
+}
+
+.approval-request-tile:hover,
+.approval-request-tile.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.approval-request-tile p {
+  margin: 0;
+  color: var(--text2);
+  line-height: 1.45;
+}
+
 .requisition-list-item {
   width: 100%;
   display: grid;
@@ -2597,12 +2753,17 @@ tbody tr:hover td {
 
   .erp-shell {
     display: block;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .sidebar {
     width: 100%;
+    height: auto;
     min-height: auto;
     flex-basis: auto;
+    position: static;
   }
 
   .sidebar-nav {
@@ -2655,6 +2816,8 @@ tbody tr:hover td {
 
   .stats-grid,
   .module-grid,
+  .approval-filter-bar,
+  .approval-tile-grid,
   .stock-movement-grid,
   .stock-history-summary,
   .summary-strip,

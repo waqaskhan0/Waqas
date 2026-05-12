@@ -1,5 +1,6 @@
 ALTER TABLE requisitions
 MODIFY status ENUM(
+  'DRAFT',
   'SUBMITTED',
   'APPROVED',
   'REJECTED',

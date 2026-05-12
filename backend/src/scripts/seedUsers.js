@@ -398,72 +398,6 @@ async function seedLeaveRequests() {
   console.log("✅ Leave requests seeded");
 }
 
-async function seedRequisitions() {
-  const ahmad = await findUser("ahmad@company.com");
-  const bilal = await findUser("bilal@company.com");
-  const kamran = await findUser("kamran@company.com");
-
-  const existing = await query(`SELECT id FROM requisitions WHERE requisition_number IN ('REQ-SEED-001', 'REQ-SEED-002')`);
-  if (existing.length) {
-    return;
-  }
-
-  const requests = [
-    ["REQ-SEED-001", ahmad.id, kamran.id, "Laptop Stand Request", "Need laptop stand for workstation", "SUBMITTED", "Laptop Stand", 1],
-    ["REQ-SEED-002", bilal.id, kamran.id, "USB Hub Request", "Need USB hub for testing devices", "APPROVED", "USB Hub", 3]
-  ];
-
-  for (const [number, requesterId, managerId, title, justification, status, item, quantity] of requests) {
-    const result = await query(
-      `
-        INSERT INTO requisitions (
-          requisition_number,
-          requested_by_user_id,
-          manager_id,
-          title,
-          justification,
-          status,
-          approved_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, CASE WHEN ? = 'APPROVED' THEN NOW() ELSE NULL END)
-      `,
-      [number, requesterId, managerId, title, justification, status, status]
-    );
-
-    await query(
-      `
-        INSERT INTO requisition_items (
-          requisition_id,
-          line_number,
-          item_description,
-          quantity_requested,
-          unit
-        )
-        VALUES (?, 1, ?, ?, 'pcs')
-      `,
-      [result.insertId, item, quantity]
-    );
-
-    await query(
-      `
-        INSERT INTO approval_logs (
-          requisition_id,
-          actor_user_id,
-          action,
-          remarks
-        )
-        VALUES (?, ?, ?, ?)
-      `,
-      [
-        result.insertId,
-        status === "APPROVED" ? managerId : requesterId,
-        status === "APPROVED" ? "APPROVED" : "SUBMITTED",
-        status === "APPROVED" ? "Seed approval for inventory queue." : justification
-      ]
-    );
-  }
-}
-
 async function seedAnnouncements() {
   const hr = await findUser("nadia@company.com");
 
@@ -621,7 +555,6 @@ async function main() {
   await seedVendors();
   await seedAttendance();
   await seedLeaveRequests();
-  await seedRequisitions();
   await seedAnnouncements();
   await seedFinanceRequests();
   await seedTasks();
