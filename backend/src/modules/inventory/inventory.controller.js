@@ -1,15 +1,11 @@
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import {
   createStockItem,
-<<<<<<< HEAD
   getInventoryDashboard,
   listInventoryQueue,
   listInventoryRequests,
-=======
   listInventoryTransactions,
-  listInventoryQueue,
   listLowStockItems,
->>>>>>> c1f5b2bc2d3fd00af2134e2513677df888304388
   listInventoryStock,
   processInventoryDecision,
   stockIn,
@@ -46,7 +42,6 @@ export const listInventoryStockController = asyncHandler(async (_req, res) => {
 });
 
 export const createStockItemController = asyncHandler(async (req, res) => {
-<<<<<<< HEAD
   const payload = parseCreateStockItemPayload(req.body);
   const stockItem = await createStockItem(payload);
 
@@ -56,7 +51,9 @@ export const createStockItemController = asyncHandler(async (req, res) => {
 export const getInventoryDashboardController = asyncHandler(async (_req, res) => {
   const dashboard = await getInventoryDashboard();
   res.json({ dashboard });
-=======
+});
+
+export const createStockItemAliasController = asyncHandler(async (req, res) => {
   const stockItem = await createStockItem(req.body);
   res.status(201).json({ stockItem });
 });
@@ -89,7 +86,6 @@ export const listLowStockItemsController = asyncHandler(async (_req, res) => {
 export const listInventoryTransactionsController = asyncHandler(async (req, res) => {
   const transactions = await listInventoryTransactions(req.query);
   res.json({ transactions });
->>>>>>> c1f5b2bc2d3fd00af2134e2513677df888304388
 });
 
 export const processInventoryDecisionController = asyncHandler(async (req, res) => {

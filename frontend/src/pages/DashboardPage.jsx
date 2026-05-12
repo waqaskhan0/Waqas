@@ -36,7 +36,6 @@ import { ManagerApprovalWorkspace } from "../components/ManagerApprovalWorkspace
 import { NotificationInbox } from "../components/NotificationInbox.jsx";
 import { ProcurementWorkspace } from "../components/ProcurementWorkspace.jsx";
 import { ReceivingWorkspace } from "../components/ReceivingWorkspace.jsx";
-import { apiClient } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const roleConfig = {
@@ -1207,6 +1206,8 @@ export function DashboardPage() {
   const [isInventoryDashboardLoading, setIsInventoryDashboardLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarTooltip, setSidebarTooltip] = useState(null);
   const [workspaceError, setWorkspaceError] = useState("");
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
 

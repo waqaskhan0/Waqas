@@ -3,7 +3,6 @@ import { env } from "../config/env.js";
 import { query } from "../config/db.js";
 import { ApiError } from "../utils/apiError.js";
 
-<<<<<<< HEAD
 const LOGIN_BYPASS_ENABLED = true;
 
 async function getDevelopmentUser() {
@@ -42,8 +41,6 @@ async function getDevelopmentUser() {
   };
 }
 
-export const authenticate = async (req, _res, next) => {
-=======
 function inferAuditModule(path) {
   return String(path ?? "")
     .split("/")
@@ -51,7 +48,6 @@ function inferAuditModule(path) {
 }
 
 export const authenticate = async (req, res, next) => {
->>>>>>> c1f5b2bc2d3fd00af2134e2513677df888304388
   try {
     const authHeader = req.headers.authorization ?? "";
     const [scheme, token] = authHeader.split(" ");

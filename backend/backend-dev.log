@@ -2,22 +2,31 @@
 > ims-backend@1.0.0 start
 > node src/server.js
 
-IMS backend listening on port 4001
-[0mGET /health [32m200[0m 4.732 ms - 67[0m
-[0mPOST /api/auth/login [32m200[0m 277.901 ms - 457[0m
-[0mPOST /api/auth/login [32m200[0m 150.628 ms - 457[0m
-[0mGET /api/auth/me [32m200[0m 38.563 ms - 163[0m
-[0mGET /api/dashboard/state [32m200[0m 408.601 ms - 12141[0m
-[0mGET /api/dashboard/state [36m304[0m 55.205 ms - -[0m
-[0mGET /api/users/managers [32m200[0m 16.179 ms - 236[0m
-[0mGET /api/requisitions/my [32m200[0m 17.634 ms - 1471[0m
-[0mGET /api/users/managers [36m304[0m 8.574 ms - -[0m
-[0mGET /api/requisitions/my [36m304[0m 6.020 ms - -[0m
-[0mGET /api/requisitions/5 [32m200[0m 72.635 ms - 958[0m
-[0mGET /api/notifications/my [32m200[0m 44.558 ms - 1948[0m
-[0mGET /api/notifications/my [36m304[0m 4.640 ms - -[0m
-[0mGET /api/users/managers [36m304[0m 19.952 ms - -[0m
-[0mGET /api/requisitions/my [36m304[0m 19.791 ms - -[0m
-[0mGET /api/users/managers [36m304[0m 9.606 ms - -[0m
-[0mGET /api/requisitions/my [36m304[0m 11.630 ms - -[0m
-[0mGET /api/requisitions/5 [36m304[0m 23.344 ms - -[0m
+IMS backend listening on port 4000
+[0mGET /health [32m200[0m 3.573 ms - 67[0m
+[0mGET /api/dashboard/state [32m200[0m 303.421 ms - 102020[0m
+[0mGET /api/inventory/stock [36m304[0m 54.251 ms - -[0m
+[0mGET /api/inventory/requests [36m304[0m 75.739 ms - -[0m
+[0mGET /api/inventory/dashboard [36m304[0m 87.511 ms - -[0m
+[0mGET /api/inventory/stock [36m304[0m 33.991 ms - -[0m
+[0mGET /api/inventory/requests [36m304[0m 33.023 ms - -[0m
+[0mGET /api/dashboard/state [32m200[0m 126.428 ms - 102020[0m
+[0mGET /api/inventory/dashboard [36m304[0m 41.944 ms - -[0m
+[0mGET /api/dashboard/state [36m304[0m 61.946 ms - -[0m
+[0mGET /health [32m200[0m 0.364 ms - 67[0m
+[0mGET /api/inventory/requests [36m304[0m 24.483 ms - -[0m
+[0mGET /api/inventory/stock [36m304[0m 34.596 ms - -[0m
+[0mGET /api/inventory/dashboard [36m304[0m 50.421 ms - -[0m
+[0mGET /api/inventory/stock [36m304[0m 16.665 ms - -[0m
+[0mGET /api/inventory/requests [36m304[0m 24.857 ms - -[0m
+[0mGET /api/inventory/dashboard [36m304[0m 23.174 ms - -[0m
+[0mGET /api/dashboard/state [36m304[0m 79.233 ms - -[0m
+[0mGET /api/dashboard/state [36m304[0m 80.904 ms - -[0m
+[0mGET /api/inventory/stock [36m304[0m 10.183 ms - -[0m
+[0mGET /api/inventory/requests [36m304[0m 24.991 ms - -[0m
+[0mGET /api/inventory/dashboard [36m304[0m 36.516 ms - -[0m
+[0mGET /api/inventory/stock [36m304[0m 24.581 ms - -[0m
+[0mGET /api/inventory/requests [36m304[0m 29.445 ms - -[0m
+[0mGET /api/inventory/dashboard [36m304[0m 23.974 ms - -[0m
+[0mGET /api/dashboard/state [36m304[0m 68.898 ms - -[0m
+[0mGET /api/dashboard/state [36m304[0m 36.822 ms - -[0m

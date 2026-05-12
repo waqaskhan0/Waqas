@@ -55,9 +55,9 @@ export async function listAuditLogs({ userId, module, dateFrom, dateTo, page = 1
       LEFT JOIN users u ON u.id = al.user_id
       WHERE ${filters.join(" AND ")}
       ORDER BY al.created_at DESC, al.id DESC
-      LIMIT ? OFFSET ?
+      LIMIT ${safeLimit} OFFSET ${(safePage - 1) * safeLimit}
     `,
-    [...params, safeLimit, (safePage - 1) * safeLimit]
+    params
   );
 
   return {

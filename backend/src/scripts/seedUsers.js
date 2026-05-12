@@ -616,10 +616,6 @@ async function main() {
     await upsertUser(user, passwordHash);
   }
 
-<<<<<<< HEAD
-  console.log("Starter user accounts are seeded.");
-  console.log(`Configured password: ${defaultPassword}`);
-=======
   await seedLeaveBalances();
   await seedInventory();
   await seedVendors();
@@ -633,7 +629,6 @@ async function main() {
 
   console.log("CompanyOS demo data is seeded.");
   console.log(`Default password: ${defaultPassword}`);
->>>>>>> c1f5b2bc2d3fd00af2134e2513677df888304388
 }
 
 main()

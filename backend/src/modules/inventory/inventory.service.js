@@ -33,7 +33,6 @@ function mapStockItem(row) {
   };
 }
 
-<<<<<<< HEAD
 function inferInventoryCategory(row) {
   const text = `${row.sku ?? ""} ${row.item_name ?? ""} ${row.specification ?? ""}`.toLowerCase();
 
@@ -50,7 +49,8 @@ function inferInventoryCategory(row) {
   }
 
   return "RWHU";
-=======
+}
+
 function mapTransaction(row) {
   return {
     id: row.id,
@@ -67,7 +67,6 @@ function mapTransaction(row) {
       fullName: row.actor_name
     }
   };
->>>>>>> c1f5b2bc2d3fd00af2134e2513677df888304388
 }
 
 function mapInventoryQueueItem(row) {
@@ -309,6 +308,23 @@ export async function listInventoryStock() {
 }
 
 export async function createStockItem(payload) {
+  const itemId = String(payload.itemId ?? payload.sku ?? "").trim();
+  const itemName = String(payload.itemName ?? payload.name ?? "").trim();
+  const itemType = String(payload.itemType ?? payload.type ?? payload.specification ?? "General").trim();
+  const itemCategory = String(payload.itemCategory ?? payload.category ?? "RWHU").trim();
+  const defaultLocation = String(payload.defaultLocation ?? payload.location ?? "Main store").trim() || "Main store";
+  const unit = String(payload.unit ?? "unit").trim() || "unit";
+  const quantityOnHand = Number(payload.quantityOnHand ?? payload.quantity ?? 0);
+  const reorderLevel = Number(payload.reorderLevel ?? payload.minLevel ?? payload.min ?? 10);
+
+  if (!itemId || !itemName || !itemType || !itemCategory) {
+    throw new ApiError(400, "Item ID, item name, type, and category are required.");
+  }
+
+  if (![quantityOnHand, reorderLevel].every((value) => Number.isFinite(value) && value >= 0)) {
+    throw new ApiError(400, "Stock quantities must be zero or greater.");
+  }
+
   const existingRows = await query(
     `
       SELECT id
@@ -316,7 +332,7 @@ export async function createStockItem(payload) {
       WHERE LOWER(sku) = LOWER(?)
       LIMIT 1
     `,
-    [payload.itemId]
+    [itemId]
   );
 
   if (existingRows.length) {
@@ -324,10 +340,10 @@ export async function createStockItem(payload) {
   }
 
   const specification = [
-    `Item ID: ${payload.itemId}`,
-    `Type: ${payload.itemType}`,
-    `Category: ${payload.itemCategory}`,
-    `Location: ${payload.defaultLocation}`
+    `Item ID: ${itemId}`,
+    `Type: ${itemType}`,
+    `Category: ${itemCategory}`,
+    `Location: ${defaultLocation}`
   ].join(" | ");
 
   const result = await query(
@@ -340,9 +356,9 @@ export async function createStockItem(payload) {
         quantity_on_hand,
         reorder_level
       )
-      VALUES (?, ?, ?, 'unit', 0, 10)
+      VALUES (?, ?, ?, ?, ?, ?)
     `,
-    [payload.itemId, payload.itemName, specification]
+    [itemId, itemName, specification, unit, quantityOnHand, reorderLevel]
   );
 
   const rows = await query(
@@ -367,58 +383,6 @@ export async function createStockItem(payload) {
     linked_requests: [],
     linked_purchase_orders: []
   });
-}
-
-export async function createStockItem(payload) {
-  const sku = String(payload.sku ?? "").trim();
-  const itemName = String(payload.itemName ?? payload.name ?? "").trim();
-  const specification = String(payload.specification ?? "").trim() || null;
-  const unit = String(payload.unit ?? "pcs").trim();
-  const quantityOnHand = Number(payload.quantityOnHand ?? payload.quantity ?? 0);
-  const reorderLevel = Number(payload.reorderLevel ?? payload.minLevel ?? payload.min ?? 0);
-
-  if (!sku || !itemName || !unit) {
-    throw new ApiError(400, "SKU, item name, and unit are required.");
-  }
-
-  if (![quantityOnHand, reorderLevel].every((value) => Number.isFinite(value) && value >= 0)) {
-    throw new ApiError(400, "Stock quantities must be zero or greater.");
-  }
-
-  try {
-    const result = await query(
-      `
-        INSERT INTO inventory_stock (
-          sku,
-          item_name,
-          specification,
-          unit,
-          quantity_on_hand,
-          reorder_level
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      [sku, itemName, specification, unit, quantityOnHand, reorderLevel]
-    );
-
-    const rows = await query(
-      `
-        SELECT id, sku, item_name, specification, unit, quantity_on_hand, reorder_level
-        FROM inventory_stock
-        WHERE id = ?
-        LIMIT 1
-      `,
-      [result.insertId]
-    );
-
-    return mapStockItem(rows[0]);
-  } catch (error) {
-    if (error.code === "ER_DUP_ENTRY") {
-      throw new ApiError(409, "A stock item with this SKU already exists.");
-    }
-
-    throw error;
-  }
 }
 
 export async function updateStockItem(stockItemId, payload) {
